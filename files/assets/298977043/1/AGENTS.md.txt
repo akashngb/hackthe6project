@@ -1,0 +1,85 @@
+# gs-fps-2 — PlayCanvas FPS
+
+A browser-based first-person shooter built on **PlayCanvas** (engine globally available as `pc`). Files live at the workspace root; `Scripts/*.js` contains all gameplay logic and is loaded by the PlayCanvas editor as regular scripts (no bundler, no transpilation).
+
+## Runtime & conventions
+
+- **Engine**: PlayCanvas. All scripts are registered via `pc.createScript('name')` and attached to entities in the editor. `this.app`, `this.entity`, `this.app.root`, `this.app.on/fire` are standard.
+- **No build step**: code runs as-is in the browser. Do **not** add `import`/`export` of local files, package managers, bundlers, or TypeScript — editor serves each file directly. Dynamic `import(…)` to a CDN URL is OK (see `debug.js` / `npc-ai.js` loading `recast-navigation`).
+- **Language**: ES2019+ is fine (classes, `let`/`const`, template strings, arrow fns, optional chaining). Keep scripts self-contained.
+- **Globals**: classes defined on `window.*` are how scripts share code (e.g. `window.NpcSystem`, `window.NavMeshWrapper` from `npc-ai.js`). Respect load order — scripts that use a global must run after the one that defines it.
+- **Physics**: Ammo.js (bundled in `Ammo/`). Raycasts via `this.app.systems.rigidbody.raycastFirst / raycastAll`.
+- **Assets**: looked up by name via `this.app.assets.find('foo.mp3')` with a fallback to `find('foo')`. Audio, navmesh binaries, and JSON grids follow this pattern.
+
+## File layout
+
+```
+Scripts/
+  anim-states.js          Player FPS weapon controller: anim clips, ADS, sway, HUD
+                          (ammo + HP bar), death overlay, shoot raycast, muzzle FX,
+                          pain sounds, footsteps. Script id: 'animActions'.
+  character-controller.js First-person player movement, crouch, jump, look.
+  locomotion.js           Maps CharacterController state -> anim state names + a
+                          9-bit bitfield used by NPC AI for network-style encoding.
+  input.js                Keyboard/mouse/gamepad/touch input plumbing.
+  camera-manager.js       Camera rig / switching.
+  virtual-joystick.js     On-screen touch joystick.
+  weapon-layer.js         Puts the viewmodel on a dedicated render layer.
+
+  npc-ai.js               Self-contained NPC AI: NavMeshWrapper (Recast, loaded from
+                          https://esm.sh/recast-navigation), NpcAgent, NpcSystem,
+                          behavior trees, personalities. ZERO PlayCanvas deps other
+                          than pc.Vec3. Script id: 'npcAi' (just exposes globals).
+  npc-controller.js       PlayCanvas bridge: spawns an NpcAgent per entity, feeds
+                          world state each tick, syncs position/rotation/anim back
+                          to the entity, handles weapon attach, muzzle flash, hit
+                          raycasts, footsteps. Script id: 'npcController'.
+  debug.js                NavMesh wireframe + HUD overlay (toggle with N). Uses
+                          the same recast wrapper pattern. Script id: 'navMeshDebug'.
+
+  probes.js               Baked lightness probe data loader.
+  probes-debugging.js     Visualises the probe grid as coloured spheres.
+  lightness.json          Baked lightness grid (gridWidth x gridDepth) used by
+                          both player and NPCs to modulate per-instance exposure.
+
+  ssao.js                 Post-process SSAO.
+  streaming-lod.mjs       Gaussian-splat streaming LOD (ES module).
+  add-collider.js         Helper to add colliders at runtime.
+  Fly Camera/fly-camera.js
+```
+
+`.pc/` holds PlayCanvas editor type declarations (`globals.d.ts`, `module.d.ts`). Do not edit.
+
+## Key events (app-level bus)
+
+Use `this.app.on / this.app.fire`. The main ones:
+
+- `cc:move:forward / backward / left / right` (number 0|1) — from CharacterController.
+- `cc:sprint`, `cc:crouch` (boolean).
+- `player:hit:npc` `(entity, damage)` — player shot an NPC.
+- `npc:hit:player` `(damage)` — NPC hit the player.
+- `npc:shoot` `(npc)` — NPC fired; consumed by `npc-controller.js` for FX.
+- `player:died`, `player:respawned`.
+
+## NPC / navmesh architecture
+
+- A single shared `NpcSystem` lives on `NpcController._sharedSystem`. The first `npcController` instance to initialise loads `navmesh.bin` and stores the world-space offset on `system.navMesh.offset`.
+- AI positions (`npc.position`) are in **world space** and track the **navmesh surface (feet level)**. `npc.aimAngle` is degrees around Y.
+- `npc.animBits` is a 9-bit field (see `npc-ai.js` constants and `locomotion.js` docstring). `NpcController._resolveAnim(bits)` maps it to an anim graph state name.
+- NPC entity origin is at the feet — the render mesh (Mixamo rigs) stands on the ground. The capsule collider added in `npc-controller.js` is still centred on the entity, so keep that in mind for raycasts and hitboxes.
+- `_syncEntity` resolves final Y by clamping to the navmesh then firing a downward ray for ground contact.
+
+## Style
+
+- Existing code uses a mix of `var` + `function` (ES5 style in anim-states, npc-controller) and `class` + `const` (npc-ai, character-controller). Match the file you are editing; don't refactor a whole file to a different style.
+- No JSX, no TypeScript, no new dependencies.
+- Keep UI overlays (HP bar, ammo, death screen, debug HUD) as absolutely-positioned `<div>`s appended to `document.body` — that's the established pattern.
+- Prefer `console.warn` / `console.log` with a `[scriptName]` prefix for diagnostics; they're used widely already.
+- Don't add JSDoc/narration comments for obvious code. Only comment non-obvious intent.
+
+## Gotchas
+
+- Scripts are loaded by the editor in an order you don't fully control; defensive checks (`if (window.NpcSystem) …`) are expected at the top of any script that depends on another.
+- Asset `ready()` callbacks: always call `this.app.assets.load(asset)` after registering the callback, or the asset won't load.
+- Navmesh offset is the world-space position of `Factory_collider_01a` (currently `(-4.695, 0.438, 11.397)`), applied when converting between PlayCanvas coords and Recast coords.
+- `findRandomPoint` / `findRandomPointAroundCircle` on the Recast wrapper can fail silently; `npc-ai.js` falls back to a non-navmesh circular wander, which can return off-mesh targets.

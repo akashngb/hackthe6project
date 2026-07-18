@@ -1,0 +1,2 @@
+Carbine model by <a href="https://sketchfab.com/3d-models/fps-animated-carbine-62977bb4c53047a185b9f3a0cdf56b87" target="_blank" rel="noopener" style="color:#fff;text-decoration:underline;">DJMaesen (Sketchfab)</a><br>' +
+Gaussian splat environment by <a href="https://superspl.at/user?id=schindelar3d" target="_blank" rel="noopener" style="color:#fff;text-decoration:underline;">Christoph Schindelar</a>';
