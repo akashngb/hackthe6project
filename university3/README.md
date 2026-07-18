@@ -45,6 +45,10 @@ gsplat asset **298979100**.
 | 298983884 | npc-m16.glb             | soldier weapon                   |
 | 298983886 | npc-muzzle-flash.glb    | muzzle flash                     |
 | 298983207 | prop-mega-knight.glb    | hallway statue                   |
+| 298983917 | fps-carbine.glb         | first-person arms + carbine (textures + allanims) |
+| 298984311 | ammo.js                 | Bullet physics fallback (asm.js) |
+| 298984312 | ammo.wasm.js            | Bullet wasm glue                 |
+| 298984313 | ammo.wasm.wasm          | Bullet wasm binary               |
 
 Scene entities: `University 3` (gsplat, position **(0,0,0)**, rotation
 **(0,0,180)** — must stay that way or rendering and collision diverge) and
@@ -74,11 +78,13 @@ await fetch('/api/assets/298979018', { method: 'PUT', body: fd });
 
 | Key | Action |
 |-----|--------|
-| click | grab mouse (look) |
+| click | grab mouse (look); further clicks fire |
+| LMB (hold) | full-auto: launches physics balls from the carbine muzzle |
+| F | reload (30-ball magazine, auto-reload on empty) |
 | WASD / arrows | walk · Shift run · Space jump |
 | R | respawn |
 | Y | toggle fly mode (E/Q up/down, Shift fast) |
-| G | throw a physics ball · C clear balls |
+| G | hand-throw a slow ball · C clear balls |
 | X | label object under crosshair |
 | V | remove/restore aimed labeled object (splats vanish + collision carved) |
 | [ / ] | shrink / grow aimed label sphere |
@@ -88,3 +94,10 @@ Soldiers wander with idle/walk animations, hold M16s with periodic muzzle
 flashes, take 3 ball hits to kill (directional death animation), respawn
 after ~6s. NPC and prop sizes are derived at runtime from the corridor's
 measured floor-to-ceiling clearance, so they adapt to the scan's scale.
+
+The first-person viewmodel (arms + carbine) hangs under the camera with the
+original FPS project's transform and time-slices its single `allanims`
+track (idle / shoot / reload). Firing launches physics balls from the
+barrel tip (the hidden muzzle-flash node marks the muzzle position). The
+Ammo/Bullet wasm engine is registered via `pc.WasmModule` at startup so
+rigidbody/collision components are usable.

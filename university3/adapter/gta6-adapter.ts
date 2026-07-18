@@ -60,7 +60,7 @@ class BallPhysics {
         this.collision = collision;
     }
 
-    throwBall(origin: any, dir: { x: number; y: number; z: number }) {
+    throwBall(origin: any, dir: { x: number; y: number; z: number }, speed: number = THROW_SPEED) {
         if (this.balls.length >= MAX_BALLS) {
             const oldest = this.balls.shift();
             if (oldest.entity) oldest.entity.destroy();
@@ -84,7 +84,7 @@ class BallPhysics {
         this.balls.push({
             entity: e,
             p: { x: origin.x + dir.x * 0.4, y: origin.y + dir.y * 0.4, z: origin.z + dir.z * 0.4 },
-            v: { x: dir.x * THROW_SPEED, y: dir.y * THROW_SPEED, z: dir.z * THROW_SPEED }
+            v: { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed }
         });
     }
 
@@ -428,6 +428,47 @@ class NpcSystem {
         }
     }
 
+    /**
+     * Apply one point of damage. (nx, nz) points from the npc toward the
+     * damage source; used to pick the death animation direction.
+     */
+    applyHit(npc: any, nx: number, nz: number) {
+        if (npc.state === 'dying' || npc.state === 'dead' || npc.hitCooldown > 0) return;
+        npc.hp--;
+        npc.hitCooldown = NPC_HIT_COOLDOWN;
+        if (npc.hp <= 0) {
+            npc.state = 'dying';
+            npc.stateTime = NPC_CORPSE_TIME;
+            const camFwd = { x: -nx, z: -nz };
+            const facing = { x: -Math.sin(npc.yaw * Math.PI / 180), z: -Math.cos(npc.yaw * Math.PI / 180) };
+            const frontal = camFwd.x * facing.x + camFwd.z * facing.z < 0;
+            this._setAnim(npc, frontal ? 'DeathB' : 'DeathF');
+        }
+        this._syncTag(npc);
+    }
+
+    /** nearest live npc intersected by the ray (vertical-capsule approximation) */
+    raycastNpcs(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number) {
+        let best: any = null;
+        let bestT = maxDist;
+        for (const npc of this.npcs) {
+            if (npc.state === 'dying' || npc.state === 'dead') continue;
+            // closest approach of the ray to the npc's vertical axis (XZ only)
+            const rx = npc.p.x - ox, rz = npc.p.z - oz;
+            const dLen2 = dx * dx + dz * dz;
+            if (dLen2 < 1e-9) continue;
+            const t = (rx * dx + rz * dz) / dLen2;
+            if (t < 0 || t > bestT) continue;
+            const px = ox + dx * t, py = oy + dy * t, pz = oz + dz * t;
+            const ddx = px - npc.p.x, ddz = pz - npc.p.z;
+            if (ddx * ddx + ddz * ddz > this.npcRadius * this.npcRadius * 1.44) continue;
+            if (py < npc.p.y || py > npc.p.y + this.npcHeight) continue;
+            best = npc;
+            bestT = t;
+        }
+        return best ? { npc: best, dist: bestT } : null;
+    }
+
     hitTest(ball: any, dt: number) {
         if (!this.ready) return;
         const speedSq = ball.v.x * ball.v.x + ball.v.y * ball.v.y + ball.v.z * ball.v.z;
@@ -441,8 +482,6 @@ class NpcSystem {
             const xz = Math.sqrt(dx * dx + dz * dz);
             const withinY = Math.abs(dy) < this.npcHeight * 0.5 + BALL_RADIUS;
             if (xz < this.npcRadius + BALL_RADIUS && withinY) {
-                npc.hp--;
-                npc.hitCooldown = NPC_HIT_COOLDOWN;
                 // bounce the ball back off the soldier
                 const nx = xz > 1e-6 ? dx / xz : 1, nz = xz > 1e-6 ? dz / xz : 0;
                 const vn = ball.v.x * nx + ball.v.z * nz;
@@ -450,16 +489,7 @@ class NpcSystem {
                     ball.v.x -= 1.6 * vn * nx;
                     ball.v.z -= 1.6 * vn * nz;
                 }
-                if (npc.hp <= 0) {
-                    npc.state = 'dying';
-                    npc.stateTime = NPC_CORPSE_TIME;
-                    // die away from the incoming ball: hit from front → fall back
-                    const camFwd = { x: -nx, z: -nz };
-                    const facing = { x: -Math.sin(npc.yaw * Math.PI / 180), z: -Math.cos(npc.yaw * Math.PI / 180) };
-                    const frontal = camFwd.x * facing.x + camFwd.z * facing.z < 0;
-                    this._setAnim(npc, frontal ? 'DeathB' : 'DeathF');
-                }
-                this._syncTag(npc);
+                this.applyHit(npc, nx, nz);
             }
         }
     }
@@ -852,6 +882,230 @@ class PropSystem {
     }
 }
 
+// ---- first-person viewmodel: arms + carbine, hitscan shooting ----
+
+const VM_ASSET: [number, string] = [298983917, 'fps-carbine.glb'];
+/** transform under the camera, from the original FPS project */
+const VM_POS: [number, number, number] = [0.239, -0.563, -0.201];
+const VM_ROT: [number, number, number] = [90, 2.89, 180];
+const VM_SCALE = 0.02077540010213852;
+/** player muzzle flash local transform inside the carbine (original project) */
+const VM_FLASH_POS: [number, number, number] = [-1.9255, -69.4615, 15.0755];
+const VM_FLASH_ROT: [number, number, number] = [90, 0, -87.11];
+const VM_FLASH_SCALE = 100;
+/** sub-clips inside the single 'allanims' track (original animActions map) */
+const VM_CLIPS: any = {
+    shoot: { start: 0, end: 0.25, loop: false, speed: 2 },
+    reload: { start: 0.25, end: 2.25, loop: false, speed: 1 },
+    idle: { start: 6, end: 6.8, loop: true, speed: 0.2 }
+};
+const VM_FIRE_INTERVAL = 0.16;
+const VM_BALL_SPEED = 16;
+const VM_MAG_SIZE = 30;
+const VM_RANGE = 60;
+
+class ViewmodelSystem {
+    app: any;
+    collision: any;
+    cameraEntity: any;
+    npcs: any;
+    entity: any = null;
+    anim: any = null;
+    flash: any = null;
+    ready = false;
+    shooting = false;
+    reloading = false;
+    ammo = VM_MAG_SIZE;
+    _current: any = null;
+    _currentName = '';
+    _cooldown = 0;
+    _flashOn = 0;
+    _ammoDiv: any = null;
+
+    balls: any = null;
+
+    constructor(app: any, collision: any, cameraEntity: any, npcs: any, balls: any) {
+        this.app = app;
+        this.collision = collision;
+        this.cameraEntity = cameraEntity;
+        this.npcs = npcs;
+        this.balls = balls;
+        this._load();
+        this._makeUi();
+    }
+
+    _url(id: number, fname: string) {
+        let q = '';
+        try {
+            const cfg = (window as any).config;
+            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
+            q = `?branchId=${bid}`;
+        } catch (e) { /* default */ }
+        return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+    }
+
+    _load() {
+        const [id, fname] = VM_ASSET;
+        const asset = new pc.Asset(fname, 'container', { url: this._url(id, fname), filename: fname });
+        asset.on('load', () => this._build(asset));
+        asset.on('error', (err: string) => console.error('viewmodel asset failed:', err));
+        this.app.assets.add(asset);
+        this.app.assets.load(asset);
+    }
+
+    _build(asset: any) {
+        try {
+            const vm = asset.resource.instantiateRenderEntity();
+            this.cameraEntity.addChild(vm);
+            vm.setLocalPosition(VM_POS[0], VM_POS[1], VM_POS[2]);
+            vm.setLocalEulerAngles(VM_ROT[0], VM_ROT[1], VM_ROT[2]);
+            vm.setLocalScale(VM_SCALE, VM_SCALE, VM_SCALE);
+            this.entity = vm;
+
+            vm.addComponent('anim', { activate: true });
+            const anims = asset.resource.animations;
+            if (anims && anims.length) {
+                vm.anim.assignAnimation('All', anims[0].resource);
+            }
+            this.anim = vm.anim;
+
+            this.ready = true;
+            this.play('idle');
+            console.log('viewmodel: carbine attached');
+            this._loadFlash(vm);
+        } catch (e) {
+            console.error('viewmodel build failed', e);
+        }
+    }
+
+    /** loads its own muzzle-flash container (name-sharing with the npc asset
+     *  can resolve to the editor's raw copy, which is not a container) */
+    _loadFlash(vm: any) {
+        try {
+            const [id, fname] = NPC_ASSET_IDS.flash;
+            const asset = new pc.Asset('vm-muzzle-flash', 'container', { url: this._url(id, fname), filename: fname });
+            asset.on('load', () => {
+                try {
+                    if (!asset.resource || typeof asset.resource.instantiateRenderEntity !== 'function') {
+                        console.warn('viewmodel: flash resource is not a container, skipping');
+                        return;
+                    }
+                    const fl = asset.resource.instantiateRenderEntity();
+                    vm.addChild(fl);
+                    fl.setLocalPosition(VM_FLASH_POS[0], VM_FLASH_POS[1], VM_FLASH_POS[2]);
+                    fl.setLocalEulerAngles(VM_FLASH_ROT[0], VM_FLASH_ROT[1], VM_FLASH_ROT[2]);
+                    fl.setLocalScale(VM_FLASH_SCALE, VM_FLASH_SCALE, VM_FLASH_SCALE);
+                    fl.enabled = false;
+                    this.flash = fl;
+                } catch (e) {
+                    console.warn('viewmodel: flash attach failed', e);
+                }
+            });
+            asset.on('error', (err: string) => console.warn('viewmodel: flash load failed', err));
+            this.app.assets.add(asset);
+            this.app.assets.load(asset);
+        } catch (e) {
+            console.warn('viewmodel: flash setup failed', e);
+        }
+    }
+
+    _makeUi() {
+        this._ammoDiv = document.createElement('div');
+        this._ammoDiv.style.cssText = 'position:fixed;bottom:26px;right:26px;color:#fff;font:bold 26px monospace;z-index:9999;text-shadow:0 0 4px rgba(0,0,0,0.8);pointer-events:none;letter-spacing:2px;';
+        document.body.appendChild(this._ammoDiv);
+        this._updateAmmo();
+
+        const dot = document.createElement('div');
+        dot.style.cssText = 'position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:rgba(255,255,255,0.9);box-shadow:0 0 3px rgba(0,0,0,0.9);z-index:9998;pointer-events:none;';
+        document.body.appendChild(dot);
+    }
+
+    _updateAmmo() {
+        if (this._ammoDiv) {
+            this._ammoDiv.textContent = this.reloading ? 'RELOADING…' : `${this.ammo} / ${VM_MAG_SIZE}`;
+        }
+    }
+
+    play(name: string) {
+        const c = VM_CLIPS[name];
+        if (!c || !this.anim || !this.anim.baseLayer) return;
+        this._current = c;
+        this._currentName = name;
+        this.anim.baseLayer.activeStateCurrentTime = c.start;
+        this.anim.speed = c.speed;
+        this.anim.baseLayer.playing = true;
+    }
+
+    setShooting(on: boolean) {
+        this.shooting = on;
+    }
+
+    reload() {
+        if (!this.ready || this.reloading || this.ammo === VM_MAG_SIZE) return;
+        this.reloading = true;
+        this.play('reload');
+        this._updateAmmo();
+    }
+
+    _fire() {
+        this.ammo--;
+        this._cooldown = VM_FIRE_INTERVAL;
+        this.play('shoot');
+
+        // launch a physics ball from the gun muzzle, aimed at the crosshair
+        if (this.balls) {
+            const f = this.cameraEntity.forward;
+            let ox, oy, oz;
+            if (this.flash) {
+                // the (invisible) muzzle-flash node marks the barrel tip
+                const mp = this.flash.getPosition();
+                ox = mp.x; oy = mp.y; oz = mp.z;
+            } else {
+                // fallback: offset toward the lower-right where the gun sits
+                const p = this.cameraEntity.getPosition();
+                const r = this.cameraEntity.right;
+                const u = this.cameraEntity.up;
+                ox = p.x + r.x * 0.22 - u.x * 0.18 + f.x * 0.3;
+                oy = p.y + r.y * 0.22 - u.y * 0.18 + f.y * 0.3;
+                oz = p.z + r.z * 0.22 - u.z * 0.18 + f.z * 0.3;
+            }
+            this.balls.throwBall({ x: ox, y: oy, z: oz }, { x: f.x, y: f.y, z: f.z }, VM_BALL_SPEED);
+        }
+
+        this._updateAmmo();
+        if (this.ammo <= 0) this.reload();
+    }
+
+    step(dt: number) {
+        if (!this.ready) return;
+
+        if (this._cooldown > 0) this._cooldown -= dt;
+
+        // sub-clip end handling on the shared timeline
+        const layer = this.anim && this.anim.baseLayer;
+        if (layer && this._current) {
+            const t = layer.activeStateCurrentTime;
+            const c = this._current;
+            if (t >= c.end) {
+                if (c.loop) {
+                    layer.activeStateCurrentTime = c.start;
+                } else if (this._currentName === 'reload') {
+                    this.reloading = false;
+                    this.ammo = VM_MAG_SIZE;
+                    this._updateAmmo();
+                    this.play('idle');
+                } else {
+                    this.play('idle');
+                }
+            }
+        }
+
+        if (this.shooting && !this.reloading && this._cooldown <= 0 && this.ammo > 0) {
+            this._fire();
+        }
+    }
+}
+
 // ---- object labeling: place spheres, name them, remove the splats inside ----
 
 const MAX_KILL_SPHERES = 16;
@@ -1185,6 +1439,9 @@ WalkScript.prototype.initialize = function (this: any) {
             case 'Space': keys.jump = down; e.preventDefault(); break;
             case 'ShiftLeft': case 'ShiftRight': keys.run = down; break;
             case 'KeyQ': keys.down = down; break;
+            case 'KeyF':
+                if (down && self._viewmodel) self._viewmodel.reload();
+                break;
             case 'KeyE': keys.up = down; break;
             case 'KeyR':
                 if (down) {
@@ -1264,8 +1521,15 @@ WalkScript.prototype.initialize = function (this: any) {
     this._onBlur = () => {
         keys.forward = keys.backward = keys.left = keys.right = keys.jump = keys.run = false;
     };
-    this._onClick = () => {
-        if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+    this._onClick = (e: MouseEvent) => {
+        if (document.pointerLockElement !== canvas) {
+            canvas.requestPointerLock();
+        } else if (e.button === 0 && self._viewmodel) {
+            self._viewmodel.setShooting(true);
+        }
+    };
+    this._onMouseUp = (e: MouseEvent) => {
+        if (e.button === 0 && self._viewmodel) self._viewmodel.setShooting(false);
     };
     this._onMouseMove = (e: MouseEvent) => {
         if (document.pointerLockElement !== canvas) return;
@@ -1285,16 +1549,42 @@ WalkScript.prototype.initialize = function (this: any) {
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
     window.addEventListener('blur', this._onBlur);
-    canvas.addEventListener('click', this._onClick);
+    canvas.addEventListener('mousedown', this._onClick);
+    window.addEventListener('mouseup', this._onMouseUp);
     window.addEventListener('mousemove', this._onMouseMove);
 
     this.on('destroy', () => {
         window.removeEventListener('keydown', this._onKeyDown);
         window.removeEventListener('keyup', this._onKeyUp);
         window.removeEventListener('blur', this._onBlur);
-        canvas.removeEventListener('click', this._onClick);
+        canvas.removeEventListener('mousedown', this._onClick);
+        window.removeEventListener('mouseup', this._onMouseUp);
         window.removeEventListener('mousemove', this._onMouseMove);
     });
+
+    // register the Ammo (Bullet) physics engine with the wasm module loader so
+    // rigidbody/collision components work if used; loads in the background
+    try {
+        if (pc.WasmModule && !(window as any).__ammoConfigured) {
+            (window as any).__ammoConfigured = true;
+            const bq = (() => {
+                try {
+                    const cfg = (window as any).config;
+                    const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
+                    return `?branchId=${bid}`;
+                } catch (e) { return ''; }
+            })();
+            const au = (id: number, f: string) => `${window.location.origin}/api/assets/${id}/file/${f}${bq}`;
+            pc.WasmModule.setConfig('Ammo', {
+                glueUrl: au(298984312, 'ammo.wasm.js'),
+                wasmUrl: au(298984313, 'ammo.wasm.wasm'),
+                fallbackUrl: au(298984311, 'ammo.js')
+            });
+            pc.WasmModule.getInstance('Ammo', () => console.log('ammo: physics engine loaded'));
+        }
+    } catch (e) {
+        console.warn('ammo setup failed', e);
+    }
 
     // the scene has no lights; meshes render black without one
     try {
@@ -1321,8 +1611,14 @@ WalkScript.prototype.initialize = function (this: any) {
         console.error('prop system init failed', e);
         this._props = null;
     }
+    try {
+        this._viewmodel = new ViewmodelSystem(this.app, collision, this.entity, this._npcs, this._balls);
+    } catch (e) {
+        console.error('viewmodel init failed', e);
+        this._viewmodel = null;
+    }
 
-    (window as any).walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props };
+    (window as any).walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel };
     this._hudT = 0;
 };
 
@@ -1337,6 +1633,7 @@ WalkScript.prototype.update = function (this: any, dt: number) {
     }
     if (this._balls) this._balls.step(Math.min(dt, 0.05));
     if (this._npcs) this._npcs.step(Math.min(dt, 0.05), this._balls ? this._balls.balls : []);
+    if (this._viewmodel) this._viewmodel.step(dt);
     if (this._labels) this._labels.update();
 
     const keys = this._keys;
@@ -1391,7 +1688,7 @@ WalkScript.prototype.update = function (this: any, dt: number) {
     if (this._hudT > 0.25 && this._hud) {
         this._hudT = 0;
         this._hud.textContent = `pos ${wp.x.toFixed(2)} ${wp.y.toFixed(2)} ${wp.z.toFixed(2)}` +
-            '\nWASD Space Shift | Y fly | R respawn | G ball | C clear balls' +
+            '\nLMB shoot | F reload | WASD Space Shift | Y fly | R respawn | G ball | C clear' +
             '\nX label object | V remove/restore | [ ] size | L labels | Backspace delete';
     }
 };
