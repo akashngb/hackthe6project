@@ -3,7 +3,7 @@
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // ../../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/pc-shim.js
+  // ../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/pc-shim.js
   var _pc = globalThis.pc;
   var math = _pc.math;
   var Vec3 = _pc.Vec3;
@@ -13,7 +13,7 @@
   var INDEXFORMAT_UINT32 = _pc.INDEXFORMAT_UINT32;
   var SEMANTIC_POSITION = _pc.SEMANTIC_POSITION;
 
-  // ../../../../../gta6/src/core/math.ts
+  // ../../../../gta6/src/core/math.ts
   var damp = (damping, dt) => 1 - Math.pow(damping, dt * 1e3);
   var mod = (n, m) => (n % m + m) % m;
   var vecToAngles = (result, vec) => {
@@ -25,7 +25,7 @@
     return result;
   };
 
-  // ../../../../../gta6/src/cameras/camera-utils.ts
+  // ../../../../gta6/src/cameras/camera-utils.ts
   var DEFAULT_CONTROLLER_DAMPING = 0.95;
   var rotation = new Quat();
   var applyFrameRotation = (angles, rotate, minPitch = -90, maxPitch = 90) => {
@@ -63,7 +63,7 @@
     return angles;
   };
 
-  // ../../../../../gta6/src/cameras/spawn-state.ts
+  // ../../../../gta6/src/cameras/spawn-state.ts
   var SpawnState = class {
     constructor() {
       __publicField(this, "_position", new Vec3());
@@ -116,7 +116,7 @@
     }
   };
 
-  // ../../../../../gta6/src/collision/find-spawn.ts
+  // ../../../../gta6/src/collision/find-spawn.ts
   var SEARCH_RADIUS = 5;
   var SEARCH_RADIUS_SQ = SEARCH_RADIUS * SEARCH_RADIUS;
   var RAY_MAX_DIST = 1e3;
@@ -178,7 +178,7 @@
     return found;
   };
 
-  // ../../../../../gta6/src/cameras/walk-controller.ts
+  // ../../../../gta6/src/cameras/walk-controller.ts
   var FIXED_DT = 1 / 60;
   var MAX_SUBSTEPS = 10;
   var out = { x: 0, y: 0, z: 0 };
@@ -471,7 +471,7 @@
     }
   };
 
-  // ../../../../../gta6/src/cameras/camera.ts
+  // ../../../../gta6/src/cameras/camera.ts
   var rotation2 = new Quat();
   var avec = new Vec3();
   var bvec = new Vec3();
@@ -511,7 +511,7 @@
     }
   };
 
-  // ../../../../../gta6/src/collision/collision.ts
+  // ../../../../gta6/src/collision/collision.ts
   var PENETRATION_EPSILON = 1e-4;
   var MAX_RESOLVE_ITERATIONS = 4;
   function resolveIterative(cx, cy, cz, findPenetration, constraintNormals, scratch, out2) {
@@ -564,7 +564,7 @@
     return hasSignificantPush;
   }
 
-  // ../../../../../gta6/src/collision/voxel-collision.ts
+  // ../../../../gta6/src/collision/voxel-collision.ts
   var SOLID_LEAF_MARKER = 4278190080 >>> 0;
   var FLAT_R = 2;
   var INV_SQRT2 = 1 / Math.sqrt(2);
@@ -1237,7 +1237,7 @@
     }
   };
 
-  // ../../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/gta6-adapter.ts
+  // ../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/gta6-adapter.ts
   var pc = globalThis.pc;
   var BUILD_TAG = "v11-shadcn";
   console.log("[walk-collision] build", BUILD_TAG);
@@ -3118,7 +3118,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       faceTarget: { x: 2.64, z: 7.08 },
       // spawn facing the door portal
       portals: [
-        { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 4, label: "\u2192 Bahen Hallway" }
+        { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 5, spawnAt: { x: 0.04, y: 0.21, z: -1.22 }, label: "\u2192 Bahen Stairs" }
       ]
     },
     {
@@ -3152,8 +3152,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       gsplatId: 298999341,
       voxelJson: [298999343, "bahen-stairs.voxel.json"],
       voxelBin: [298999344, "bahen-stairs.voxel.bin"],
-      spawn: null,
-      // grid center
+      spawn: { x: 0.04, y: 0.21, z: -1.22 },
       rot: [0, 0, 180],
       noSoldiers: true,
       noNpcs: true

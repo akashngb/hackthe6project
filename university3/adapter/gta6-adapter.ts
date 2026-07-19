@@ -2266,7 +2266,7 @@ const SCENES: any[] = [
         noSoldiers: true,
         faceTarget: { x: 2.64, z: 7.08 }, // spawn facing the door portal
         portals: [
-            { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 4, label: '→ Bahen Hallway' }
+            { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 5, spawnAt: { x: 0.04, y: 0.21, z: -1.22 }, label: '→ Bahen Stairs' }
         ]
     },
     {
@@ -2298,7 +2298,7 @@ const SCENES: any[] = [
         gsplatId: 298999341,
         voxelJson: [298999343, 'bahen-stairs.voxel.json'],
         voxelBin: [298999344, 'bahen-stairs.voxel.bin'],
-        spawn: null, // grid center
+        spawn: { x: 0.04, y: 0.21, z: -1.22 },
         rot: [0, 0, 180],
         noSoldiers: true,
         noNpcs: true // no friends / requisitioned units either
