@@ -1,9 +1,10 @@
-# University 3 — walkable Gaussian splat hallway
+# SIEGE — wave shooter inside a Gaussian splat hallway
 
 Everything that powers the "Hack the 6ix" PlayCanvas project
-(editor scene **2551548**): first-person walking with real collision inside
-the University 3 Gaussian splat scan, a ball-physics playground, object
-labeling/removal, animated soldier NPCs, and the Mega Knight prop.
+(editor scene **2551548**): a wave-based defense shooter ("SIEGE") played in
+first person inside the University 3 Gaussian splat scan — real voxel
+collision, a ball-launcher carbine, soldier NPCs with personalities and
+line-of-sight combat, object labeling/removal, and the Mega Knight prop.
 
 ## Layout
 
@@ -78,21 +79,35 @@ await fetch('/api/assets/298979018', { method: 'PUT', body: fd });
 
 | Key | Action |
 |-----|--------|
-| click | grab mouse (look); further clicks fire |
-| LMB (hold) | full-auto: launches physics balls from the carbine muzzle |
-| F | reload (30-ball magazine, auto-reload on empty) |
+| click | start game / grab mouse; further clicks fire |
+| LMB (hold) | full-auto: small physics balls from the carbine muzzle |
+| R | reload (30-round magazine, auto-reload on empty) |
 | WASD / arrows | walk · Shift run · Space jump |
-| R | respawn |
+| F | respawn |
 | Y | toggle fly mode (E/Q up/down, Shift fast) |
-| G | hand-throw a slow ball · C clear balls |
+| G | hand-throw a big slow ball · C clear balls |
 | X | label object under crosshair |
 | V | remove/restore aimed labeled object (splats vanish + collision carved) |
 | [ / ] | shrink / grow aimed label sphere |
 | L | toggle labels · Backspace delete label |
+| ` | toggle the green debug HUD |
 
-Soldiers wander with idle/walk animations, hold M16s with periodic muzzle
-flashes, take 3 ball hits to kill (directional death animation), respawn
-after ~6s. NPC and prop sizes are derived at runtime from the corridor's
+## Gameplay (SIEGE)
+
+`GameDirector` runs `title → playing → intermission → gameover`. Wave N
+spawns `2+N` soldiers (cap 8) with +12%/wave walk speed. +100 score per
+kill; player has 100 HP with regen after 5s calm; death shows a restart
+screen that fully resets the round.
+
+Soldier combat is ported from the original project's `npc-ai.js` /
+`npc-controller.js`: each soldier draws a personality (Sgt. Havoc, Ghost,
+Captain Valor, Chaos, Strategist, Grumps) controlling aggression and aim
+jitter; perception uses voxel-raycast line of sight (22m) with point-blank
+hearing and 10s last-known-position memory; they advance until inside an
+11m firing range (aggressive ones push to point-blank) and fire aim-aligned
+bursts (30-round mags, 3s reloads, muzzle flash + light, ~8 damage with
+distance-based hit chance). Three ball hits kill, with directional death
+animations. NPC and prop sizes are derived at runtime from the corridor's
 measured floor-to-ceiling clearance, so they adapt to the scan's scale.
 
 The first-person viewmodel (arms + carbine) hangs under the camera with the
