@@ -55,6 +55,7 @@ gsplat asset **298979100**.
 | 298987089/90/91 | myhal.sog + voxel  | Myhal hallway scene              |
 | 298987672/73/74 | bahen-front.sog + voxel | Bahen main entrance (outdoor, safe zone) |
 | 298987763/64/65 | classroom.sog + voxel | Bahen classroom scene          |
+| 298988208/09/10 | bahen-hallway.sog + voxel | Bahen large hallway scene  |
 
 Scene entities: `University 3` (gsplat, position **(0,0,0)**, rotation
 **(0,0,180)** — must stay that way or rendering and collision diverge) and
@@ -113,9 +114,18 @@ at 30fps and asserts none leave the collision grid.
 
 ## Locations (SceneManager)
 
-`SCENES` in the adapter lists four scans: Bahen 5F (spawn pinned at
-(-0.22, 0.75, 0.05)), Myhal, Bahen Front (outdoor; `noSoldiers` safe zone
-with a door portal at (2.64, 1.65, 7.08) → Bahen 5F), and Bahen Classroom.
+`SCENES` in the adapter lists five scans. The game opens at Bahen Front
+(outdoor `noSoldiers` safe zone). Portal network: Bahen Front door at
+(2.64, 1.65, 7.08) → Bahen Hallway; Bahen Hallway (spawn -1.26, 0.36,
+-2.72) has a doorway at (9.46, 0.42, 7.25) ⇄ Bahen Classroom (spawn
+-1.54, 0.3, -6.26, which doubles as the return portal — portals arm only
+after the player steps clear, preventing instant bounce-back). Bahen 5F
+(spawn pinned at (-0.22, 0.75, 0.05)) and Myhal are reachable via the
+dropdown. Portals can carry a per-destination `spawnAt` arrival point.
+Soldier spawn spots are storey-aware: probed downward from just above the
+player's head and accepted only when the floor is within 1.2m of the
+player's floor (4–28m ring), reading the walk controller's authoritative
+position so wave spawns during a teleport use the arrival location.
 Switching (dropdown or portal contact) hot-swaps the gsplat asset and
 mutates the shared VoxelCollision's internals in place, so every system
 (walking, balls, NPCs, targets, voxel view, labels) re-derives from the new
