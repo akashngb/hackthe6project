@@ -12,7 +12,10 @@ Pass a mutable `status` dict to watch progress live (the HTTP server does this).
 import os, time, requests
 from batch import (select, submit as _submit, download as _download,
                    BASE, HDRS, CACHE, N_IMAGES, ENHANCE_INPUTS, POLL_SECS)
-from enhance_photo import enhance_file
+try:
+    from enhance_photo import enhance_file  # optional: needs cv2/mediapipe
+except ImportError:
+    enhance_file = None
 
 
 def generate(image_paths, name, status=None, enhance=None):
