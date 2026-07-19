@@ -2290,7 +2290,8 @@ const SCENES: any[] = [
         rot: [0, 0, 180],
         faceTarget: { x: 9.46, z: 7.25 }, // spawn/respawn facing the classroom door
         portals: [
-            { x: 9.46, y: 0.42, z: 7.25, radius: 1.4, to: 3, label: '→ Classroom' }
+            { x: 9.46, y: 0.42, z: 7.25, radius: 1.4, to: 3, label: '→ Classroom' },
+            { x: 1.67, y: 0.45, z: 0.77, radius: 1.4, to: 0, label: '→ Bahen 5F' }
         ]
     },
     {
