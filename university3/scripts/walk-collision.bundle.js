@@ -3935,6 +3935,200 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       }
     }
   };
+  var FRIENDS = [
+    { name: "Larry", assetId: 298997648, fname: "friend-larry.glb" },
+    { name: "Aditya", assetId: 298997653, fname: "friend-aditya.glb" }
+  ];
+  var FRIEND_HEIGHT = 1.72;
+  var FRIEND_SPEED = 1;
+  var FriendSystem = class {
+    constructor(app, collision, npcs) {
+      __publicField(this, "app");
+      __publicField(this, "collision");
+      __publicField(this, "npcs");
+      // reused for floor-spot search + camera ref
+      __publicField(this, "scenes");
+      __publicField(this, "friends", []);
+      __publicField(this, "_lastScene", -1);
+      __publicField(this, "_screenPos");
+      this.app = app;
+      this.collision = collision;
+      this.npcs = npcs;
+      this._screenPos = new pc.Vec3();
+      for (const cfg of FRIENDS) this._load(cfg);
+    }
+    _url(id, fname) {
+      let q = "";
+      try {
+        const cfg = window.config;
+        const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
+        q = `?branchId=${bid}`;
+      } catch (e) {
+      }
+      return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+    }
+    _load(cfg) {
+      const asset = new pc.Asset(cfg.fname, "container", { url: this._url(cfg.assetId, cfg.fname), filename: cfg.fname });
+      asset.on("load", () => {
+        cfg.asset = asset;
+        this._spawn(cfg);
+      });
+      asset.on("error", (err) => console.error("friend asset failed:", cfg.name, err));
+      this.app.assets.add(asset);
+      this.app.assets.load(asset);
+    }
+    _spawn(cfg) {
+      try {
+        const spot = this.npcs._randomFloorSpot();
+        if (!spot) {
+          setTimeout(() => this._spawn(cfg), 2500);
+          return;
+        }
+        const root = new pc.Entity("friend-" + cfg.name);
+        const model = cfg.asset.resource.instantiateRenderEntity();
+        root.addChild(model);
+        this.app.root.addChild(root);
+        for (const r of model.findComponents("render")) {
+          for (const mi of r.meshInstances) mi.cull = false;
+        }
+        model.setLocalEulerAngles(0, 180, 0);
+        model.addComponent("anim", { activate: true });
+        const anims = cfg.asset.resource.animations;
+        if (anims && anims.length) {
+          model.anim.assignAnimation("Walk", anims[0].resource);
+        }
+        root.setPosition(spot.x, spot.y, spot.z);
+        const el = document.createElement("div");
+        el.className = "sg sg-mono";
+        el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;color:#4ade80;background:rgba(14,17,23,0.75);border:1px solid rgba(74,222,128,0.4);font-size:10px;font-weight:700;padding:1px 8px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);";
+        el.textContent = cfg.name;
+        document.body.appendChild(el);
+        this.friends.push({
+          cfg,
+          root,
+          model,
+          el,
+          p: { x: spot.x, y: spot.y, z: spot.z },
+          target: null,
+          yaw: Math.random() * 360,
+          fit: { phase: "scale", wait: 4 },
+          _push: { x: 0, y: 0, z: 0 }
+        });
+      } catch (e) {
+        console.warn("friend spawn failed", cfg.name, e);
+      }
+    }
+    _measure(model) {
+      let minY = Infinity, maxY = -Infinity, cx = 0, cz = 0, n = 0;
+      const stack = [model];
+      while (stack.length) {
+        const nd = stack.pop();
+        const ch = nd.children;
+        for (let i = 0; i < ch.length; i++) stack.push(ch[i]);
+        const pos = nd.getPosition();
+        if (!isFinite(pos.y)) continue;
+        minY = Math.min(minY, pos.y);
+        maxY = Math.max(maxY, pos.y);
+        cx += pos.x;
+        cz += pos.z;
+        n++;
+      }
+      if (n < 3) return null;
+      return { minY, ext: maxY - minY, cx: cx / n, cz: cz / n };
+    }
+    /** respawn everyone when the location changes */
+    resetForScene() {
+      for (const f of this.friends) {
+        try {
+          f.root.destroy();
+        } catch (e) {
+        }
+        if (f.el) f.el.remove();
+      }
+      this.friends.length = 0;
+      for (const cfg of FRIENDS) {
+        if (cfg.asset) this._spawn(cfg);
+      }
+    }
+    step(dt) {
+      if (this.scenes && this.scenes.current !== this._lastScene) {
+        this._lastScene = this.scenes.current;
+        if (this.friends.length) this.resetForScene();
+      }
+      const camComp = this.npcs.cameraEntity.camera;
+      const canvas = this.app.graphicsDevice.canvas;
+      for (const f of this.friends) {
+        if (f.fit) {
+          if (f.fit.wait > 0) {
+            f.fit.wait--;
+            continue;
+          }
+          const m = this._measure(f.model);
+          if (!m || !isFinite(m.ext) || m.ext <= 0.05) {
+            f.fit.wait = 4;
+            continue;
+          }
+          if (f.fit.phase === "scale") {
+            const cur = f.model.getLocalScale().x;
+            let s = cur * (FRIEND_HEIGHT * 0.95 / m.ext);
+            if (!isFinite(s) || s < 5e-4 || s > 10) s = 1;
+            f.model.setLocalScale(s, s, s);
+            f.fit.phase = "ground";
+            f.fit.wait = 3;
+          } else {
+            const dy = f.p.y - m.minY;
+            if (isFinite(dy) && Math.abs(dy) < 50) {
+              const lp = f.model.getLocalPosition();
+              f.model.setLocalPosition(lp.x, lp.y + dy, lp.z);
+            }
+            f.fit = null;
+          }
+          continue;
+        }
+        if (!f.target) {
+          const spot = this.npcs._randomFloorSpot();
+          if (spot) f.target = spot;
+        }
+        if (f.target) {
+          const dx = f.target.x - f.p.x;
+          const dz = f.target.z - f.p.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < 0.5) {
+            f.target = null;
+          } else {
+            const nx = dx / dist, nz = dz / dist;
+            f.p.x += nx * FRIEND_SPEED * dt;
+            f.p.z += nz * FRIEND_SPEED * dt;
+            const targetYaw = Math.atan2(-nx, -nz) * 180 / Math.PI;
+            let dyaw = targetYaw - f.yaw;
+            while (dyaw > 180) dyaw -= 360;
+            while (dyaw < -180) dyaw += 360;
+            f.yaw += Math.max(-240 * dt, Math.min(240 * dt, dyaw));
+            const down = this.collision.queryRay(f.p.x, f.p.y + 1.2, f.p.z, 0, -1, 0, 3);
+            if (down) f.p.y += (down.y - f.p.y) * Math.min(1, dt * 10);
+            const cy = f.p.y + FRIEND_HEIGHT * 0.5;
+            if (this.collision.queryCapsule(f.p.x, cy, f.p.z, FRIEND_HEIGHT * 0.5 - 0.3, 0.3, f._push)) {
+              f.p.x += f._push.x;
+              f.p.z += f._push.z;
+              if (Math.abs(f._push.x) + Math.abs(f._push.z) > 0.03) f.target = null;
+            }
+          }
+        }
+        f.root.setPosition(f.p.x, f.p.y, f.p.z);
+        f.root.setEulerAngles(0, f.yaw, 0);
+        if (f.el && camComp && canvas) {
+          camComp.worldToScreen(new pc.Vec3(f.p.x, f.p.y + FRIEND_HEIGHT + 0.15, f.p.z), this._screenPos);
+          if (this._screenPos.z < 0) {
+            f.el.style.display = "none";
+          } else {
+            f.el.style.display = "block";
+            f.el.style.left = `${this._screenPos.x * (canvas.clientWidth / canvas.width)}px`;
+            f.el.style.top = `${this._screenPos.y * (canvas.clientHeight / canvas.height)}px`;
+          }
+        }
+      }
+    }
+  };
   var WAVE_INTERMISSION = 5;
   var PLAYER_MAX_HP = 100;
   var HP_REGEN_DELAY = 5;
@@ -4450,6 +4644,12 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._npcs.sounds = this._sounds;
       this._npcs.getPlayerPos = () => walkCamera.position;
     }
+    try {
+      this._friends = this._npcs ? new FriendSystem(this.app, collision, this._npcs) : null;
+    } catch (e) {
+      console.error("friend system init failed", e);
+      this._friends = null;
+    }
     if (this._viewmodel) this._viewmodel.sounds = this._sounds;
     try {
       this._targets = new TargetSystem(this.app, collision, this._sounds);
@@ -4481,6 +4681,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         this._targets.onHit = () => this._director.practiceHit();
       }
       if (this._director && this._scenes) this._director.sceneMgr = this._scenes;
+      if (this._friends) this._friends.scenes = this._scenes;
       try {
         this._net = new NetSystem(this.app, this, {
           npcs: this._npcs,
@@ -4538,6 +4739,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     if (this._targets) this._targets.step(dt, this._balls ? this._balls.balls : []);
     if (this._scenes) this._scenes.update();
     if (this._net) this._net.step(dt);
+    if (this._friends) this._friends.step(dt);
     if (this._voxelView) this._voxelView.update(this.entity);
     if (this._labels) this._labels.update();
     const keys = this._keys;
