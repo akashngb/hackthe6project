@@ -3168,7 +3168,8 @@ class NetSystem {
 const FRIENDS: any[] = [
     { name: 'Larry', assetId: 298997648, fname: 'friend-larry.glb' },
     { name: 'Aditya', assetId: 298997653, fname: 'friend-aditya.glb' },
-    { name: 'Akash', assetId: 298998118, fname: 'friend-akash.glb' }
+    { name: 'Akash', assetId: 298998118, fname: 'friend-akash.glb' },
+    { name: 'Kelly', assetId: 298998127, fname: 'friend-kelly.glb' }
 ];
 const FRIEND_HEIGHT = 1.72;
 const FRIEND_SPEED = 1.0;

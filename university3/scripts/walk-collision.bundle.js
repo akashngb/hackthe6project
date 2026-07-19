@@ -3979,7 +3979,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
   var FRIENDS = [
     { name: "Larry", assetId: 298997648, fname: "friend-larry.glb" },
     { name: "Aditya", assetId: 298997653, fname: "friend-aditya.glb" },
-    { name: "Akash", assetId: 298998118, fname: "friend-akash.glb" }
+    { name: "Akash", assetId: 298998118, fname: "friend-akash.glb" },
+    { name: "Kelly", assetId: 298998127, fname: "friend-kelly.glb" }
   ];
   var FRIEND_HEIGHT = 1.72;
   var FRIEND_SPEED = 1;
