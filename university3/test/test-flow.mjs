@@ -37,6 +37,8 @@ const mkEl = () => {
   const el = {
     style: {}, dataset: {}, children: [], textContent: '', innerHTML: '', value: '0', id: '',
     appendChild(c) { this.children.push(c); }, prepend(c) { this.children.unshift(c); },
+    classList: { add(){}, remove(){}, toggle(){}, contains: () => true },
+    querySelector: () => null, replaceWith() {},
     addEventListener() {}, removeEventListener() {}, remove() {}, blur() {},
     get lastChild() { return this.children[this.children.length - 1] || null; }
   };

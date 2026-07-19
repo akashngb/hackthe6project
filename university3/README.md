@@ -88,10 +88,10 @@ await fetch('/api/assets/298979018', { method: 'PUT', body: fd });
 | click | start game / grab mouse; further clicks fire |
 | LMB (hold) | full-auto: small physics balls from the carbine muzzle |
 | R | reload (30-round magazine, auto-reload on empty) |
-| WASD / arrows | walk · Shift run · Space jump |
+| WASD / arrows | walk · Shift run · Space jump · C crouch |
 | F | respawn |
 | Y | toggle fly mode (E/Q up/down, Shift fast) |
-| G | hand-throw a big slow ball · C clear balls |
+| G | hand-throw a big slow ball |
 | X | label object under crosshair |
 | V | remove/restore aimed labeled object (splats vanish + collision carved) |
 | [ / ] | shrink / grow aimed label sphere |
@@ -99,7 +99,37 @@ await fetch('/api/assets/298979018', { method: 'PUT', body: fd });
 | B | toggle the collision voxel view (supersplat-style grid) |
 | T | toggle target practice mode (small floating targets, no ricochets) |
 | top-right dropdown | teleport between scanned locations |
+| M | locations sidebar (preview cards, click to teleport, drop-zone) |
+| N | clear balls |
 | ` | toggle the green debug HUD |
+
+## Multiplayer (party/)
+
+`party/relay.mjs` is a ~60-line Node WebSocket relay (rooms via URL path
+/parties/main/<room>, hello/join/leave + rebroadcast with sender id;
+`party/server.ts` is the same protocol as a PartyKit worker). Run
+`node relay.mjs 1999` and expose with `cloudflared tunnel --url
+http://localhost:1999`; the client (NetSystem) reads `?party=` / `?room=`
+URL params or the baked default. Peers exchange 12Hz state
+(pos/yaw/crouch/scene) + shot events; remote players render as soldier
+avatars with interpolation, name tags, walk/idle anims, and scene
+filtering; shots replay with real local physics.
+
+## Import scans at runtime (DropSystem)
+
+Drop a scan .zip (containing a .sog + voxel .json/.bin — any filenames;
+the meta json is identified by content) anywhere on the page or on the
+sidebar drop-zone: a dependency-free zip reader (native
+DecompressionStream) unpacks it in the browser, registers a new scene in
+SceneManager, and teleports you in. The whole thesis in one gesture:
+any scan becomes a level.
+
+## UI
+
+One injected stylesheet (`UI_CSS`): glass panels, single accent, sans+mono
+type. Locations sidebar (M): per-scene preview cards (framebuffer
+screenshots auto-captured on first visit, persisted to localStorage),
+SAFE/COMBAT/IMPORTED chips, active highlight, and the zip drop-zone.
 
 ## Physics & audio notes
 

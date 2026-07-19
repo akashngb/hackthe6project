@@ -1493,7 +1493,6 @@
   var GUN_LOCAL_EULER = [160, 0, 105];
   var GUN_LOCAL_SCALE = 50;
   var FLASH_LOCAL_POS = [0.9191, 0.1532, -64e-4];
-  var FLASH_LOCAL_SCALE = 100;
   var NPC_PERSONALITIES = [
     { name: "Sgt. Havoc", aggression: 0.9, randomness: 0.2 },
     { name: "Ghost", aggression: 0.3, randomness: 0.1 },
@@ -1742,7 +1741,8 @@
       if (deathB) model.anim.assignAnimation("DeathB", deathB, void 0, 1, false);
       root.setPosition(spot.x, spot.y, spot.z);
       const el = document.createElement("div");
-      el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;color:#fff;background:rgba(30,30,30,0.75);font:11px monospace;padding:1px 7px;border-radius:9px;pointer-events:none;white-space:nowrap;";
+      el.className = "sg sg-mono";
+      el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;color:#f3b6bb;background:rgba(14,17,23,0.75);border:1px solid rgba(230,57,70,0.35);font-size:10px;padding:1px 8px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);";
       document.body.appendChild(el);
       const pers = NPC_PERSONALITIES[Math.floor(Math.random() * NPC_PERSONALITIES.length)];
       const npc = {
@@ -1817,7 +1817,7 @@
         const facing = { x: -Math.sin(npc.yaw * Math.PI / 180), z: -Math.cos(npc.yaw * Math.PI / 180) };
         const frontal = camFwd.x * facing.x + camFwd.z * facing.z < 0;
         this._setAnim(npc, frontal ? "DeathB" : "DeathF");
-        if (npc.flash) npc.flash.enabled = false;
+        if (npc.muzzleLight) npc.muzzleLight.intensity = 0;
         if (this.onKill) this.onKill(npc);
       }
       this._syncTag(npc);
@@ -1983,30 +1983,21 @@
         gun.setLocalEulerAngles(GUN_LOCAL_EULER[0], GUN_LOCAL_EULER[1], GUN_LOCAL_EULER[2]);
         gun.setLocalScale(GUN_LOCAL_SCALE, GUN_LOCAL_SCALE, GUN_LOCAL_SCALE);
         npc.gun = gun;
-        if (this.assets.flash) {
-          const flash = this.assets.flash.resource.instantiateRenderEntity();
-          for (const r of flash.findComponents("render")) {
-            for (const mi of r.meshInstances) mi.cull = false;
-          }
-          gun.addChild(flash);
-          flash.setLocalPosition(FLASH_LOCAL_POS[0], FLASH_LOCAL_POS[1], FLASH_LOCAL_POS[2]);
-          flash.setLocalScale(FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE);
-          flash.enabled = false;
-          npc.flash = flash;
-          npc.flashOn = 0;
-          try {
-            const lightEnt = new pc.Entity("muzzle-light");
-            flash.addChild(lightEnt);
-            lightEnt.addComponent("light", {
-              type: "omni",
-              color: new pc.Color(1, 0.85, 0.4),
-              intensity: 0,
-              range: 4,
-              castShadows: false
-            });
-            npc.muzzleLight = lightEnt.light;
-          } catch (e) {
-          }
+        npc.flash = null;
+        npc.flashOn = 0;
+        try {
+          const lightEnt = new pc.Entity("muzzle-light");
+          gun.addChild(lightEnt);
+          lightEnt.setLocalPosition(FLASH_LOCAL_POS[0], FLASH_LOCAL_POS[1], FLASH_LOCAL_POS[2]);
+          lightEnt.addComponent("light", {
+            type: "omni",
+            color: new pc.Color(1, 0.85, 0.4),
+            intensity: 0,
+            range: 4,
+            castShadows: false
+          });
+          npc.muzzleLight = lightEnt.light;
+        } catch (e) {
         }
         console.log("npcSystem: m16 attached to", npc.root.name, "scale", GUN_LOCAL_SCALE);
       } catch (e) {
@@ -2117,10 +2108,7 @@
             npc.shootT = 0.45 + Math.random() * 0.4 * (1 + npc.pers.randomness);
             npc.bullets--;
             if (npc.bullets <= 0) npc.reloadT = NPC_RELOAD_TIME;
-            if (npc.flash) {
-              npc.flash.enabled = true;
-              npc.flashOn = 0.05;
-            }
+            npc.flashOn = 0.05;
             if (npc.muzzleLight) npc.muzzleLight.intensity = 3;
             if (this.sounds) {
               this.sounds.play("shoot.mp3", {
@@ -2229,6 +2217,7 @@
       __publicField(this, "_ammoDiv", null);
       __publicField(this, "balls", null);
       __publicField(this, "sounds", null);
+      __publicField(this, "onShoot", null);
       __publicField(this, "_dryT", 0);
       this.app = app;
       this.collision = collision;
@@ -2310,7 +2299,8 @@
     }
     _makeUi() {
       this._ammoDiv = document.createElement("div");
-      this._ammoDiv.style.cssText = "position:fixed;bottom:26px;right:26px;color:#fff;font:bold 26px monospace;z-index:9999;text-shadow:0 0 4px rgba(0,0,0,0.8);pointer-events:none;letter-spacing:2px;";
+      this._ammoDiv.className = "sg sg-panel sg-mono";
+      this._ammoDiv.style.cssText = "position:fixed;bottom:20px;right:16px;font-size:22px;font-weight:700;z-index:9999;padding:10px 18px;pointer-events:none;letter-spacing:2px;";
       document.body.appendChild(this._ammoDiv);
       this._updateAmmo();
       const dot = document.createElement("div");
@@ -2400,6 +2390,7 @@
           dz = f.z;
         }
         this.balls.throwBall({ x: ox, y: oy, z: oz }, { x: dx, y: dy, z: dz }, VM_BALL_SPEED, VM_BALL_RADIUS);
+        if (this.onShoot) this.onShoot(ox, oy, oz, dx, dy, dz);
       }
       this._updateAmmo();
       if (this.ammo <= 0) this.reload();
@@ -2612,7 +2603,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this.app.root.addChild(sphere);
       marker.sphere = sphere;
       const el = document.createElement("div");
-      el.style.cssText = "position:fixed;transform:translate(-50%,-140%);z-index:9998;color:#fff;background:rgba(20,110,220,0.85);font:12px monospace;padding:2px 8px;border-radius:10px;pointer-events:none;white-space:nowrap;";
+      el.className = "sg sg-mono";
+      el.style.cssText = "position:fixed;transform:translate(-50%,-140%);z-index:9998;color:#e8eaed;background:rgba(14,17,23,0.8);border:1px solid rgba(96,165,250,0.4);font-size:11px;padding:2px 9px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);";
       el.textContent = marker.label;
       document.body.appendChild(el);
       marker.el = el;
@@ -3127,6 +3119,10 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       __publicField(this, "_select", null);
       __publicField(this, "_portals", []);
       __publicField(this, "_screenPos", null);
+      __publicField(this, "_cards", []);
+      __publicField(this, "_thumbs", {});
+      __publicField(this, "_sidebar", null);
+      __publicField(this, "_cardsWrap", null);
       this.app = app;
       this.collision = collision;
       this.controller = controller;
@@ -3135,22 +3131,149 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._makeDropdown();
     }
     _makeDropdown() {
-      const sel = document.createElement("select");
-      sel.id = "scene-select";
-      sel.style.cssText = "position:fixed;top:14px;right:14px;z-index:10006;background:rgba(13,17,23,0.85);color:#fff;font:bold 13px monospace;border:1px solid #e63946;border-radius:5px;padding:6px 10px;cursor:pointer;outline:none;";
-      SCENES.forEach((s, i) => {
-        const o = document.createElement("option");
-        o.value = String(i);
-        o.textContent = "\u{1F4CD} " + s.name;
-        sel.appendChild(o);
+      injectUiCss();
+      const sb = document.createElement("div");
+      sb.id = "sg-sidebar";
+      sb.className = "sg sg-panel hidden";
+      sb.innerHTML = "<h3>LOCATIONS <span>M to close</span></h3>";
+      const wrap = document.createElement("div");
+      wrap.id = "sg-cards";
+      sb.appendChild(wrap);
+      const dz = document.createElement("div");
+      dz.id = "sg-dropzone";
+      dz.innerHTML = '\u21E3 drop a scan .zip<br><span style="font-size:10px;opacity:0.7">.sog + voxel .json/.bin \u2192 new location</span>';
+      dz.addEventListener("click", () => {
+        const inp = document.createElement("input");
+        inp.type = "file";
+        inp.accept = ".zip";
+        inp.onchange = () => {
+          const f = inp.files && inp.files[0];
+          const drops = this.script._drops;
+          if (f && drops) drops._import(f);
+        };
+        inp.click();
       });
-      sel.addEventListener("change", () => {
-        const i = parseInt(sel.value, 10);
-        sel.blur();
+      dz.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dz.classList.add("over");
+      });
+      dz.addEventListener("dragleave", () => dz.classList.remove("over"));
+      dz.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dz.classList.remove("over");
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        const drops = this.script._drops;
+        if (f && drops) drops._import(f);
+      });
+      sb.appendChild(dz);
+      document.body.appendChild(sb);
+      this._sidebar = sb;
+      this._cardsWrap = wrap;
+      SCENES.forEach((_, i) => this.addCard(i));
+      this._setActive(this.current);
+    }
+    addCard(i) {
+      const s = SCENES[i];
+      const card = document.createElement("div");
+      card.className = "sg-card";
+      let thumb = this._thumbs[s.name];
+      try {
+        thumb = thumb || localStorage.getItem("sg-thumb-" + s.name);
+      } catch (e) {
+      }
+      if (thumb) {
+        this._thumbs[s.name] = thumb;
+        card.innerHTML = `<img class="sg-thumb" src="${thumb}">`;
+      } else {
+        const initials = s.name.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 3);
+        card.innerHTML = `<div class="sg-thumb-ph">${initials}</div>`;
+      }
+      const chip = s.gsplatAsset ? '<span class="sg-chip drop">IMPORTED</span>' : s.noSoldiers ? '<span class="sg-chip safe">SAFE</span>' : '<span class="sg-chip combat">COMBAT</span>';
+      const row = document.createElement("div");
+      row.className = "sg-card-row";
+      row.innerHTML = `<span>${s.name}</span>${chip}`;
+      card.appendChild(row);
+      card.addEventListener("click", () => {
+        this.toggleSidebar(false);
         this.switchTo(i);
       });
-      document.body.appendChild(sel);
-      this._select = sel;
+      this._cardsWrap.appendChild(card);
+      this._cards[i] = card;
+    }
+    _setActive(i) {
+      this._cards.forEach((c, idx) => {
+        if (c) c.classList.toggle("active", idx === i);
+      });
+    }
+    toggleSidebar(force) {
+      if (!this._sidebar) return;
+      const show = force !== void 0 ? force : this._sidebar.classList.contains("hidden");
+      this._sidebar.classList.toggle("hidden", !show);
+      if (show) {
+        try {
+          document.exitPointerLock();
+        } catch (e) {
+        }
+      }
+    }
+    _setThumb(name, url) {
+      this._thumbs[name] = url;
+      try {
+        localStorage.setItem("sg-thumb-" + name, url);
+      } catch (e) {
+      }
+      const i = SCENES.findIndex((s) => s.name === name);
+      const card = this._cards[i];
+      if (card) {
+        const ph = card.querySelector(".sg-thumb-ph");
+        if (ph) {
+          const img = document.createElement("img");
+          img.className = "sg-thumb";
+          img.src = url;
+          ph.replaceWith(img);
+        } else {
+          const img = card.querySelector(".sg-thumb");
+          if (img) img.src = url;
+        }
+      }
+    }
+    /** capture the framebuffer shortly after arriving in a scene */
+    _maybeCapture() {
+      const scene = SCENES[this.current];
+      if (!scene || this._thumbs[scene.name]) return;
+      const dev = this.app.graphicsDevice;
+      const gl = dev.gl;
+      if (!gl) return;
+      const handler = () => {
+        this.app.off("postrender", handler);
+        try {
+          const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+          const px = new Uint8Array(w * h * 4);
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let lum = 0;
+          for (let i = 0; i < 40; i++) {
+            const o = (Math.random() * w * h | 0) * 4;
+            lum += px[o] + px[o + 1] + px[o + 2];
+          }
+          if (lum < 200) return;
+          const full = document.createElement("canvas");
+          full.width = w;
+          full.height = h;
+          const fctx = full.getContext("2d");
+          const img = fctx.createImageData(w, h);
+          for (let y = 0; y < h; y++) {
+            img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+          }
+          fctx.putImageData(img, 0, 0);
+          const t = document.createElement("canvas");
+          t.width = 256;
+          t.height = 110;
+          t.getContext("2d").drawImage(full, 0, 0, 256, 110);
+          this._setThumb(scene.name, t.toDataURL("image/jpeg", 0.65));
+        } catch (e) {
+        }
+      };
+      this.app.on("postrender", handler);
     }
     _assetUrl(id, fname) {
       let q = "";
@@ -3163,6 +3286,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
     }
     async _loadVoxel(scene) {
+      if (scene.voxelData) return scene.voxelData;
       if (scene.voxel === "embedded") {
         const data = window.UNI3_VOXEL;
         const bin = atob(data.binBase64);
@@ -3237,7 +3361,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           ent = null;
         }
         const el = document.createElement("div");
-        el.style.cssText = "position:fixed;transform:translate(-50%,-120%);z-index:9998;color:#fff;background:rgba(20,80,220,0.85);font:bold 12px monospace;padding:3px 10px;border-radius:10px;pointer-events:none;white-space:nowrap;";
+        el.className = "sg sg-mono";
+        el.style.cssText = "position:fixed;transform:translate(-50%,-120%);z-index:9998;color:#93c5fd;background:rgba(14,17,23,0.8);border:1px solid rgba(96,165,250,0.5);font-size:11px;font-weight:700;padding:3px 11px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);";
         el.textContent = cfg.label || "portal";
         document.body.appendChild(el);
         this._portals.push({ cfg, ent, el, armed: false });
@@ -3296,7 +3421,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         const splat = this.app.root.findByName("University 3");
         if (splat) {
           splat.setEulerAngles(scene.rot[0], scene.rot[1], scene.rot[2]);
-          const asset = this.app.assets.get(scene.gsplatId);
+          const asset = scene.gsplatAsset || this.app.assets.get(scene.gsplatId);
           if (asset) {
             if (!asset.resource && !asset.loading) this.app.assets.load(asset);
             splat.gsplat.asset = asset;
@@ -3352,14 +3477,16 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           }
         }
         this._buildPortals(scene);
-        if (this._select) this._select.value = String(i);
+        this._setActive(i);
         this.current = i;
+        setTimeout(() => this._maybeCapture(), 1800);
         console.log("sceneManager: switched to", scene.name);
       } catch (e) {
         console.error("sceneManager switch failed", e);
       }
       if (s._npcs) s._npcs.suspended = false;
       this._busy = false;
+      if (s._net && s._net.enabled) s._net.sendStateNow();
       const canvas = this.app.graphicsDevice.canvas;
       if (canvas) canvas.requestPointerLock();
       if (this._queued) {
@@ -3369,7 +3496,422 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       }
     }
   };
-  var THEME_BG = "#0d1117";
+  var UI_CSS = `
+:root{--sg-panel:rgba(14,17,23,0.82);--sg-border:rgba(255,255,255,0.09);--sg-accent:#e63946;--sg-text:#e8eaed;--sg-muted:#9aa0a6;}
+.sg{font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--sg-text);}
+.sg-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+.sg-panel{background:var(--sg-panel);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--sg-border);border-radius:12px;}
+.sg-chip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:10px;letter-spacing:0.5px;font-weight:600;}
+.sg-chip.safe{background:rgba(46,160,67,0.18);color:#4ade80;}
+.sg-chip.combat{background:rgba(230,57,70,0.18);color:#f87171;}
+.sg-chip.drop{background:rgba(96,165,250,0.18);color:#93c5fd;}
+#sg-sidebar{position:fixed;top:16px;right:16px;bottom:16px;width:248px;z-index:10007;display:flex;flex-direction:column;padding:14px;gap:10px;overflow:hidden;transition:transform 0.22s ease,opacity 0.22s ease;}
+#sg-sidebar.hidden{transform:translateX(280px);opacity:0;pointer-events:none;}
+#sg-sidebar h3{margin:0;font-size:11px;letter-spacing:3px;color:var(--sg-muted);font-weight:600;display:flex;justify-content:space-between;align-items:center;}
+#sg-sidebar h3 span{color:var(--sg-muted);font-weight:400;letter-spacing:0;}
+#sg-cards{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px;}
+#sg-cards::-webkit-scrollbar{width:4px;}
+#sg-cards::-webkit-scrollbar-thumb{background:var(--sg-border);border-radius:2px;}
+.sg-card{border:1px solid var(--sg-border);border-radius:10px;overflow:hidden;cursor:pointer;background:rgba(255,255,255,0.03);transition:border-color 0.15s;flex-shrink:0;}
+.sg-card:hover{border-color:rgba(255,255,255,0.25);}
+.sg-card.active{border-color:var(--sg-accent);box-shadow:0 0 0 1px var(--sg-accent);}
+.sg-thumb{width:100%;height:96px;object-fit:cover;display:block;background:linear-gradient(135deg,#1c2230,#0e1117);}
+.sg-thumb-ph{width:100%;height:96px;display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--sg-muted);background:linear-gradient(135deg,#1c2230,#0e1117);}
+.sg-card-row{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;font-size:12px;font-weight:600;}
+#sg-dropzone{border:1.5px dashed rgba(255,255,255,0.22);border-radius:10px;padding:16px 10px;text-align:center;font-size:11px;color:var(--sg-muted);cursor:pointer;transition:border-color 0.15s,background 0.15s;flex-shrink:0;}
+#sg-dropzone:hover,#sg-dropzone.over{border-color:#93c5fd;background:rgba(96,165,250,0.06);color:#93c5fd;}
+`;
+  function injectUiCss() {
+    if (document.getElementById("sg-css")) return;
+    const st = document.createElement("style");
+    st.id = "sg-css";
+    st.textContent = UI_CSS;
+    document.head ? document.head.appendChild(st) : document.body.appendChild(st);
+  }
+  async function unzip(buffer) {
+    const u8 = new Uint8Array(buffer);
+    const dv = new DataView(buffer);
+    let eocd = -1;
+    for (let i = u8.length - 22; i >= Math.max(0, u8.length - 22 - 65535); i--) {
+      if (dv.getUint32(i, true) === 101010256) {
+        eocd = i;
+        break;
+      }
+    }
+    if (eocd < 0) throw new Error("not a zip file");
+    const count = dv.getUint16(eocd + 10, true);
+    let off = dv.getUint32(eocd + 16, true);
+    const out2 = [];
+    const td = new TextDecoder();
+    for (let n = 0; n < count; n++) {
+      if (dv.getUint32(off, true) !== 33639248) break;
+      const method = dv.getUint16(off + 10, true);
+      const compSize = dv.getUint32(off + 20, true);
+      const nameLen = dv.getUint16(off + 28, true);
+      const extraLen = dv.getUint16(off + 30, true);
+      const commentLen = dv.getUint16(off + 32, true);
+      const localOff = dv.getUint32(off + 42, true);
+      const name = td.decode(u8.subarray(off + 46, off + 46 + nameLen));
+      off += 46 + nameLen + extraLen + commentLen;
+      if (name.endsWith("/")) continue;
+      const lNameLen = dv.getUint16(localOff + 26, true);
+      const lExtraLen = dv.getUint16(localOff + 28, true);
+      const dataStart = localOff + 30 + lNameLen + lExtraLen;
+      const comp = u8.subarray(dataStart, dataStart + compSize);
+      let data;
+      if (method === 0) {
+        data = comp.slice();
+      } else if (method === 8) {
+        const stream = new Blob([comp.slice()]).stream().pipeThrough(new globalThis.DecompressionStream("deflate-raw"));
+        data = new Uint8Array(await new Response(stream).arrayBuffer());
+      } else {
+        continue;
+      }
+      out2.push({ name, data });
+    }
+    return out2;
+  }
+  var DropSystem = class {
+    constructor(app, script) {
+      __publicField(this, "app");
+      __publicField(this, "script");
+      __publicField(this, "_dropCount", 0);
+      this.app = app;
+      this.script = script;
+      window.addEventListener("dragover", (e) => e.preventDefault());
+      window.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) this._import(f);
+      });
+    }
+    _banner(text, secs) {
+      const d2 = this.script._director;
+      if (d2) d2._showBanner(text, secs);
+      console.log("[drop]", text);
+    }
+    async _import(file) {
+      try {
+        if (!/\.zip$/i.test(file.name)) {
+          this._banner("DROP A .ZIP (sog + voxel json/bin)", 4);
+          return;
+        }
+        this._banner(`IMPORTING ${file.name.toUpperCase()}\u2026`, 8);
+        const entries = await unzip(await file.arrayBuffer());
+        let sog = null, metaEntry = null, bin = null;
+        const td = new TextDecoder();
+        for (const en of entries) {
+          const base = en.name.split("/").pop() || en.name;
+          if (/\.sog$/i.test(base)) sog = en;
+          else if (/\.bin$/i.test(base)) bin = en;
+          else if (/\.json$/i.test(base)) {
+            try {
+              const j = JSON.parse(td.decode(en.data));
+              if (j.gridBounds && j.nodeCount) {
+                metaEntry = en;
+                en.meta = j;
+              }
+            } catch (err) {
+            }
+          }
+        }
+        if (!sog || !metaEntry || !bin) {
+          this._banner("ZIP NEEDS: .sog + voxel .json + voxel .bin", 5);
+          return;
+        }
+        const meta = metaEntry.meta;
+        const view = new Uint32Array(bin.data.buffer, bin.data.byteOffset, Math.floor(bin.data.length / 4));
+        const nodes = view.slice(0, meta.nodeCount);
+        const leafData = view.slice(meta.nodeCount, meta.nodeCount + meta.leafDataCount);
+        const blobUrl = URL.createObjectURL(new Blob([sog.data], { type: "application/zip" }));
+        const asset = new pc.Asset(`drop-${++this._dropCount}.sog`, "gsplat", { url: blobUrl, filename: "drop.sog" });
+        this.app.assets.add(asset);
+        const sceneName = file.name.replace(/\.zip$/i, "").replace(/[-_]+/g, " ").trim().slice(0, 24) || "dropped scan";
+        const scenes = this.script._scenes;
+        const idx = SCENES.length;
+        SCENES.push({
+          name: sceneName,
+          gsplatAsset: asset,
+          voxelData: { meta, nodes, leafData },
+          spawn: null,
+          rot: [0, 0, 180]
+        });
+        if (scenes) scenes.addCard(idx);
+        this._banner(`SCAN READY \u2014 ENTERING ${sceneName.toUpperCase()}`, 4);
+        if (scenes) scenes.switchTo(idx);
+      } catch (e) {
+        console.error("drop import failed", e);
+        this._banner("IMPORT FAILED: " + (e && e.message || e), 5);
+      }
+    }
+  };
+  var PARTY_URL = "wss://roland-obligations-futures-collections.trycloudflare.com";
+  var NET_SEND_INTERVAL = 1 / 12;
+  var NetSystem = class {
+    constructor(app, script, refs) {
+      __publicField(this, "app");
+      __publicField(this, "script");
+      __publicField(this, "npcs");
+      __publicField(this, "balls");
+      __publicField(this, "scenes");
+      __publicField(this, "director");
+      __publicField(this, "walkCamera");
+      __publicField(this, "enabled", false);
+      __publicField(this, "ws", null);
+      __publicField(this, "myId", "");
+      __publicField(this, "myName", "");
+      __publicField(this, "room", "hack6");
+      __publicField(this, "peers", /* @__PURE__ */ new Map());
+      __publicField(this, "_sendT", 0);
+      __publicField(this, "_retry", 0);
+      __publicField(this, "_destroyed", false);
+      __publicField(this, "_screenPos", null);
+      __publicField(this, "_url", "");
+      this.app = app;
+      this.script = script;
+      this.npcs = refs.npcs;
+      this.balls = refs.balls;
+      this.scenes = refs.scenes;
+      this.director = refs.director;
+      this.walkCamera = refs.walkCamera;
+      let base = "";
+      try {
+        const q = new URLSearchParams(window.location.search);
+        base = q.get("party") || PARTY_URL;
+        this.room = q.get("room") || "hack6";
+      } catch (e) {
+      }
+      if (!base) {
+        console.log("net: multiplayer off (no ?party= url configured)");
+        return;
+      }
+      base = base.replace(/^http/, "ws").replace(/\/+$/, "");
+      this._url = `${base}/parties/main/${encodeURIComponent(this.room)}`;
+      try {
+        this.myName = localStorage.getItem("siege-name") || "";
+      } catch (e) {
+      }
+      if (!this.myName) {
+        try {
+          this.myName = (window.prompt("Player name for multiplayer:", "player") || "player").slice(0, 16);
+          localStorage.setItem("siege-name", this.myName);
+        } catch (e) {
+          this.myName = "player" + Math.floor(Math.random() * 1e3);
+        }
+      }
+      this.enabled = true;
+      this._screenPos = new pc.Vec3();
+      this._connect();
+    }
+    _connect() {
+      if (this._destroyed) return;
+      try {
+        const ws = new WebSocket(this._url);
+        this.ws = ws;
+        ws.onopen = () => {
+          this._retry = 0;
+          console.log("net: connected to", this._url, "as", this.myName);
+          this.sendStateNow();
+        };
+        ws.onmessage = (ev) => {
+          try {
+            this._onMsg(JSON.parse(ev.data));
+          } catch (e) {
+          }
+        };
+        ws.onclose = () => {
+          this.ws = null;
+          if (this._destroyed) return;
+          const wait = Math.min(1e4, 1500 * ++this._retry);
+          setTimeout(() => this._connect(), wait);
+        };
+        ws.onerror = () => {
+          try {
+            ws.close();
+          } catch (e) {
+          }
+        };
+      } catch (e) {
+        console.warn("net: connect failed", e);
+      }
+    }
+    _send(obj) {
+      if (this.ws && this.ws.readyState === 1) {
+        try {
+          this.ws.send(JSON.stringify(obj));
+        } catch (e) {
+        }
+      }
+    }
+    sendStateNow() {
+      if (!this.enabled) return;
+      const p = this.walkCamera.position;
+      const a = this.walkCamera.angles;
+      this._send({
+        t: "state",
+        name: this.myName,
+        scene: this.scenes ? this.scenes.current : 0,
+        x: +p.x.toFixed(3),
+        y: +p.y.toFixed(3),
+        z: +p.z.toFixed(3),
+        yaw: +a.y.toFixed(1),
+        pitch: +a.x.toFixed(1),
+        crouch: !!this.script._crouched
+      });
+    }
+    sendShot(ox, oy, oz, dx, dy, dz) {
+      this._send({
+        t: "shoot",
+        scene: this.scenes ? this.scenes.current : 0,
+        ox: +ox.toFixed(3),
+        oy: +oy.toFixed(3),
+        oz: +oz.toFixed(3),
+        dx: +dx.toFixed(4),
+        dy: +dy.toFixed(4),
+        dz: +dz.toFixed(4)
+      });
+    }
+    _onMsg(m) {
+      if (m.t === "hello") {
+        this.myId = m.id;
+        return;
+      }
+      if (m.t === "leave") {
+        const peer = this.peers.get(m.id);
+        if (peer) {
+          if (peer.ent) {
+            try {
+              peer.ent.destroy();
+            } catch (e) {
+            }
+          }
+          if (peer.el) peer.el.remove();
+          if (this.director) this.director._feedMsg(`${peer.name || "player"} left`);
+          this.peers.delete(m.id);
+          this._syncOnline();
+        }
+        return;
+      }
+      if (m.t === "state") {
+        let peer = this.peers.get(m.id);
+        if (!peer) {
+          peer = { name: m.name, scene: m.scene, cur: null, prev: null, t: 0, ent: null, model: null, el: null, animState: "" };
+          this.peers.set(m.id, peer);
+          if (this.director) this.director._feedMsg(`${m.name || "player"} joined`);
+          this._syncOnline();
+        }
+        peer.name = m.name || peer.name;
+        peer.scene = m.scene;
+        peer.prev = peer.cur || { x: m.x, y: m.y, z: m.z, yaw: m.yaw, crouch: m.crouch };
+        peer.cur = { x: m.x, y: m.y, z: m.z, yaw: m.yaw, crouch: m.crouch };
+        peer.t = 0;
+        return;
+      }
+      if (m.t === "shoot") {
+        if (this.scenes && m.scene !== this.scenes.current) return;
+        if (this.balls) {
+          this.balls.throwBall({ x: m.ox, y: m.oy, z: m.oz }, { x: m.dx, y: m.dy, z: m.dz }, VM_BALL_SPEED, VM_BALL_RADIUS);
+        }
+        return;
+      }
+    }
+    _syncOnline() {
+      if (this.director) {
+        this.director.online = this.peers.size + 1;
+        this.director._syncHud();
+      }
+    }
+    _ensureAvatar(peer) {
+      if (peer.ent || !this.npcs || !this.npcs.ready || !this.npcs.assets.model) return;
+      try {
+        const root = new pc.Entity("net-player");
+        const model = this.npcs.assets.model.resource.instantiateRenderEntity();
+        root.addChild(model);
+        this.app.root.addChild(root);
+        for (const r of model.findComponents("render")) {
+          for (const mi of r.meshInstances) mi.cull = false;
+        }
+        const s = this.npcs.npcHeight / 180;
+        model.setLocalScale(s, s, s);
+        model.setLocalEulerAngles(0, 180, 0);
+        model.addComponent("anim", { activate: true });
+        const idle = this.npcs._track("idle");
+        const walk = this.npcs._track("walk");
+        if (idle) model.anim.assignAnimation("Idle", idle);
+        if (walk) model.anim.assignAnimation("Walk", walk);
+        peer.ent = root;
+        peer.model = model;
+        const el = document.createElement("div");
+        el.className = "sg sg-mono";
+        el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;color:#93c5fd;background:rgba(14,17,23,0.75);border:1px solid rgba(96,165,250,0.4);font-size:10px;font-weight:700;padding:1px 8px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);";
+        el.textContent = peer.name || "player";
+        document.body.appendChild(el);
+        peer.el = el;
+      } catch (e) {
+        console.warn("net: avatar failed", e);
+      }
+    }
+    _setPeerAnim(peer, state) {
+      if (peer.animState === state || !peer.model || !peer.model.anim) return;
+      try {
+        if (peer.model.anim.baseLayer) {
+          peer.model.anim.baseLayer.transition(state, 0.2);
+          peer.animState = state;
+        }
+      } catch (e) {
+      }
+    }
+    step(dt) {
+      if (!this.enabled) return;
+      this._sendT -= dt;
+      if (this._sendT <= 0) {
+        this._sendT = NET_SEND_INTERVAL;
+        this.sendStateNow();
+      }
+      const camComp = this.script.entity.camera;
+      const canvas = this.app.graphicsDevice.canvas;
+      for (const peer of this.peers.values()) {
+        if (!peer.cur) continue;
+        this._ensureAvatar(peer);
+        if (!peer.ent) continue;
+        const sameScene = !this.scenes || peer.scene === this.scenes.current;
+        peer.ent.enabled = sameScene;
+        if (!sameScene) {
+          if (peer.el) peer.el.style.display = "none";
+          continue;
+        }
+        peer.t += dt;
+        const alpha = Math.min(1, peer.t / NET_SEND_INTERVAL);
+        const a = peer.prev || peer.cur, b = peer.cur;
+        const x = a.x + (b.x - a.x) * alpha;
+        const y = a.y + (b.y - a.y) * alpha;
+        const z = a.z + (b.z - a.z) * alpha;
+        let dyaw = b.yaw - a.yaw;
+        while (dyaw > 180) dyaw -= 360;
+        while (dyaw < -180) dyaw += 360;
+        const yaw = a.yaw + dyaw * alpha;
+        const floorY = y - (b.crouch ? 0.95 : 1.5);
+        peer.ent.setPosition(x, floorY, z);
+        peer.ent.setEulerAngles(0, yaw, 0);
+        if (peer.model) {
+          const s = this.npcs.npcHeight / 180;
+          peer.model.setLocalScale(s, b.crouch ? s * 0.72 : s, s);
+        }
+        const spd = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / NET_SEND_INTERVAL;
+        this._setPeerAnim(peer, spd > 0.3 ? "Walk" : "Idle");
+        if (peer.el && camComp && canvas) {
+          camComp.worldToScreen(new pc.Vec3(x, floorY + (this.npcs ? this.npcs.npcHeight : 1.7) + 0.15, z), this._screenPos);
+          if (this._screenPos.z < 0) {
+            peer.el.style.display = "none";
+          } else {
+            peer.el.style.display = "block";
+            peer.el.style.left = `${this._screenPos.x * (canvas.clientWidth / canvas.width)}px`;
+            peer.el.style.top = `${this._screenPos.y * (canvas.clientHeight / canvas.height)}px`;
+          }
+        }
+      }
+    }
+  };
   var WAVE_INTERMISSION = 5;
   var PLAYER_MAX_HP = 100;
   var HP_REGEN_DELAY = 5;
@@ -3417,15 +3959,25 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         document.body.appendChild(d2);
         return d2;
       };
-      this._overlay = mk(`position:fixed;inset:0;z-index:10005;display:flex;flex-direction:column;align-items:center;justify-content:center;background:${THEME_BG}f2;color:#fff;font-family:Georgia,serif;text-align:center;cursor:pointer;`);
-      this._banner = mk("position:fixed;top:18%;left:50%;transform:translateX(-50%);z-index:10004;display:none;background:rgba(13,17,23,0.92);border:2px solid #e63946;color:#fff;font:bold 20px Georgia,serif;padding:12px 34px;border-radius:4px;letter-spacing:2px;white-space:nowrap;");
-      this._hud = mk(`position:fixed;top:14px;left:14px;z-index:10001;color:#fff;font:bold 16px monospace;text-shadow:0 1px 3px rgba(0,0,0,0.9);pointer-events:none;background:rgba(13,17,23,0.6);padding:8px 14px;border-radius:6px;border-left:4px solid #e63946;`);
-      this._feed = mk("position:fixed;top:96px;left:14px;z-index:10001;color:#ffd;font:12px monospace;text-shadow:0 1px 2px #000;pointer-events:none;");
-      const hpWrap = mk("position:fixed;bottom:26px;left:26px;z-index:10001;width:220px;height:18px;background:rgba(0,0,0,0.55);border:2px solid #fff;border-radius:4px;pointer-events:none;");
+      injectUiCss();
+      this._overlay = mk("position:fixed;inset:0;z-index:10005;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(14,17,23,0.92),rgba(5,7,10,0.98));color:#e8eaed;text-align:center;cursor:pointer;");
+      this._overlay.className = "sg";
+      this._banner = mk("position:fixed;top:16%;left:50%;transform:translateX(-50%);z-index:10004;display:none;padding:12px 30px;font-size:15px;font-weight:600;letter-spacing:2px;white-space:nowrap;border-left:3px solid var(--sg-accent);");
+      this._banner.className = "sg sg-panel";
+      this._hud = mk("position:fixed;top:16px;left:16px;z-index:10001;pointer-events:none;padding:10px 16px;min-width:180px;");
+      this._hud.className = "sg sg-panel";
+      this._feed = mk("position:fixed;top:104px;left:16px;z-index:10001;pointer-events:none;font-size:11px;color:#9aa0a6;display:flex;flex-direction:column;gap:2px;");
+      this._feed.className = "sg sg-mono";
+      const hpWrap = mk("position:fixed;bottom:20px;left:16px;z-index:10001;width:230px;padding:10px 14px;pointer-events:none;");
+      hpWrap.className = "sg sg-panel";
+      hpWrap.innerHTML = '<div style="font-size:10px;letter-spacing:2px;color:var(--sg-muted);margin-bottom:6px">INTEGRITY</div>';
+      const hpBar = document.createElement("div");
+      hpBar.style.cssText = "height:6px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden;";
       this._hpFill = document.createElement("div");
-      this._hpFill.style.cssText = "height:100%;width:100%;background:linear-gradient(90deg,#e63946,#ffb4a2);border-radius:2px;transition:width 0.15s;";
-      hpWrap.appendChild(this._hpFill);
-      this._vignette = mk("position:fixed;inset:0;z-index:10000;pointer-events:none;background:radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,0.55) 100%);opacity:0;transition:opacity 0.12s;");
+      this._hpFill.style.cssText = "height:100%;width:100%;background:linear-gradient(90deg,var(--sg-accent),#ffb4a2);border-radius:3px;transition:width 0.15s;";
+      hpBar.appendChild(this._hpFill);
+      hpWrap.appendChild(hpBar);
+      this._vignette = mk("position:fixed;inset:0;z-index:10000;pointer-events:none;background:radial-gradient(ellipse at center, transparent 55%, rgba(200,30,40,0.5) 100%);opacity:0;transition:opacity 0.12s;");
       this._overlay.addEventListener("click", () => {
         if (this.state === "title") this._start();
         else if (this.state === "gameover") this._restart();
@@ -3470,7 +4022,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     _showTitle() {
       this.state = "title";
       this._overlay.style.display = "flex";
-      this._overlay.innerHTML = '<div style="font-size:60px;font-weight:bold;letter-spacing:10px;margin:10px 0;color:#e63946">SIEGE</div><div style="font-size:13px;letter-spacing:4px;opacity:0.7;margin-bottom:30px">HOLD THE HALLWAY</div><div style="font:13px monospace;line-height:1.9;opacity:0.9">WASD move \xB7 mouse look \xB7 LMB fire ball cannon \xB7 R reload<br>Space jump \xB7 Shift run \xB7 F respawn \xB7 Y fly \xB7 X label \xB7 V remove</div><div style="margin-top:32px;font:bold 16px monospace;animation:pulse 1.2s infinite">CLICK TO START</div><div style="margin-top:14px;font:13px monospace;opacity:0.7">press T for target practice</div><style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}</style>';
+      this._overlay.innerHTML = '<div style="font-size:64px;font-weight:800;letter-spacing:14px;margin:8px 0 4px;color:var(--sg-accent)">SIEGE</div><div style="font-size:12px;letter-spacing:5px;color:var(--sg-muted);margin-bottom:34px">REAL CAMPUS \xB7 REAL COLLISION</div><div class="sg-mono" style="font-size:12px;line-height:2;color:var(--sg-muted)">WASD move &nbsp;\xB7&nbsp; LMB fire &nbsp;\xB7&nbsp; R reload &nbsp;\xB7&nbsp; C crouch &nbsp;\xB7&nbsp; Space jump<br>M locations &nbsp;\xB7&nbsp; T target practice &nbsp;\xB7&nbsp; X label &nbsp;\xB7&nbsp; V remove object &nbsp;\xB7&nbsp; B voxels</div><div style="margin-top:36px;font-size:15px;font-weight:700;letter-spacing:2px;animation:sgpulse 1.4s infinite">CLICK TO START</div><div style="margin-top:12px;font-size:11px;color:var(--sg-muted)">drop a scan .zip anywhere \u2014 or on the locations panel \u2014 to add your own place</div><style>@keyframes sgpulse{0%,100%{opacity:1}50%{opacity:0.3}}</style>';
     }
     _start() {
       this.state = "playing";
@@ -3548,14 +4100,13 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this.npcs.playerDead = true;
       document.exitPointerLock();
       this._overlay.style.display = "flex";
-      this._overlay.innerHTML = `<div style="font-size:48px;font-weight:bold;letter-spacing:4px;color:#e63946">YOU DIED</div><div style="font:16px monospace;margin-top:22px;line-height:2">final score <b>${this.score}</b><br>waves survived <b>${this.wave}</b> \xB7 soldiers eliminated <b>${this.kills}</b></div><div style="margin-top:30px;font:bold 15px monospace;animation:pulse 1.2s infinite">CLICK TO RESTART</div>`;
+      this._overlay.innerHTML = `<div style="font-size:50px;font-weight:800;letter-spacing:6px;color:var(--sg-accent)">YOU DIED</div><div class="sg-mono" style="font-size:14px;margin-top:24px;line-height:2.1;color:var(--sg-muted)">final score <b style="color:#e8eaed">${this.score}</b> \xB7 waves <b style="color:#e8eaed">${this.wave}</b> \xB7 kills <b style="color:#e8eaed">${this.kills}</b></div><div style="margin-top:32px;font-size:14px;font-weight:700;letter-spacing:2px;animation:sgpulse 1.4s infinite">CLICK TO RESTART</div>`;
     }
     _syncHud() {
-      if (this.state === "practice") {
-        this._hud.innerHTML = `TARGET PRACTICE<br><span style="font-weight:normal">hits ${this.practiceHits} \xB7 score ${this.practiceHits * 50}</span>`;
-      } else {
-        this._hud.innerHTML = `SIEGE<br><span style="font-weight:normal">wave ${this.wave} \xB7 score ${this.score} \xB7 kills ${this.kills}</span>`;
-      }
+      const online = this.online > 1 ? ` \xB7 <span style="color:#4ade80">${this.online} online</span>` : "";
+      const title = this.state === "practice" ? "TARGET PRACTICE" : "SIEGE";
+      const stats = this.state === "practice" ? `hits ${this.practiceHits} \xB7 score ${this.practiceHits * 50}` : `wave ${this.wave} \xB7 score ${this.score} \xB7 kills ${this.kills}`;
+      this._hud.innerHTML = `<div style="font-size:11px;letter-spacing:3px;font-weight:700;color:var(--sg-accent);margin-bottom:3px">${title}</div><div class="sg-mono" style="font-size:12px;color:var(--sg-muted)">${stats}${online}</div>`;
       this._hpFill.style.width = `${this.hp / PLAYER_MAX_HP * 100}%`;
     }
     update(dt) {
@@ -3604,7 +4155,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     if (!this._coordBox) {
       this._coordBox = document.createElement("div");
       this._coordBox.id = "coord-box";
-      this._coordBox.style.cssText = "position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:10001;color:#fff;background:rgba(13,17,23,0.6);font:12px monospace;padding:4px 12px;border-radius:5px;letter-spacing:1px;pointer-events:none;";
+      this._coordBox.className = "sg sg-panel sg-mono";
+      this._coordBox.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10001;font-size:11px;color:var(--sg-muted);padding:5px 14px;letter-spacing:1px;pointer-events:none;";
       document.body.appendChild(this._coordBox);
     }
     this._coordT = 0;
@@ -3644,6 +4196,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     };
     this._keys = keys;
     this._flyMode = false;
+    this._crouched = false;
     this._pitch = 0;
     this._yaw = 0;
     const canvas = this.app.graphicsDevice.canvas;
@@ -3698,6 +4251,9 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           }
           break;
         case "KeyC":
+          keys.crouch = down;
+          break;
+        case "KeyN":
           if (down) self._balls.clear();
           break;
         case "KeyX":
@@ -3742,6 +4298,9 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
             if (self._director.state === "practice") self._director.exitPractice();
             else self._director.enterPractice();
           }
+          break;
+        case "KeyM":
+          if (down && self._scenes) self._scenes.toggleSidebar();
           break;
         case "KeyB":
           if (down && self._voxelView) {
@@ -3876,8 +4435,17 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._targets = null;
     }
     try {
+      this._drops = new DropSystem(this.app, this);
+    } catch (e) {
+      console.error("drop system init failed", e);
+      this._drops = null;
+    }
+    try {
       this._scenes = new SceneManager(this.app, collision, controller, walkCamera, this);
       this._scenes.switchTo(2);
+      setTimeout(() => {
+        if (this._scenes) this._scenes._maybeCapture();
+      }, 6e3);
     } catch (e) {
       console.error("scene manager init failed", e);
       this._scenes = null;
@@ -3890,6 +4458,21 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         this._targets.onHit = () => this._director.practiceHit();
       }
       if (this._director && this._scenes) this._director.sceneMgr = this._scenes;
+      try {
+        this._net = new NetSystem(this.app, this, {
+          npcs: this._npcs,
+          balls: this._balls,
+          scenes: this._scenes,
+          director: this._director,
+          walkCamera
+        });
+        if (this._net.enabled && this._viewmodel) {
+          this._viewmodel.onShoot = (ox, oy, oz, dx, dy, dz) => this._net.sendShot(ox, oy, oz, dx, dy, dz);
+        }
+      } catch (e) {
+        console.error("net init failed", e);
+        this._net = null;
+      }
       if (this._director) {
         this._director.onRestart = () => {
           if (this._balls) this._balls.clear();
@@ -3907,7 +4490,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       console.error("game director init failed", e);
       this._director = null;
     }
-    window.walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel, director: this._director, targets: this._targets, scenes: this._scenes };
+    window.walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel, director: this._director, targets: this._targets, scenes: this._scenes, net: this._net };
     this._hudT = 0;
   };
   WalkScript.prototype.update = function(dt) {
@@ -3931,6 +4514,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     if (this._director) this._director.update(dt);
     if (this._targets) this._targets.step(dt, this._balls ? this._balls.balls : []);
     if (this._scenes) this._scenes.update();
+    if (this._net) this._net.step(dt);
     if (this._voxelView) this._voxelView.update(this.entity);
     if (this._labels) this._labels.update();
     const keys = this._keys;
@@ -3962,6 +4546,25 @@ Y = walk mode | WASD + E/Q up/down | Shift fast`;
       }
       return;
     }
+    const wantCrouch = !!keys.crouch;
+    if (wantCrouch !== this._crouched) {
+      const c = this._controller;
+      if (wantCrouch) {
+        c.capsuleHeight = 0.9;
+        c.eyeHeight = 0.75;
+        c.moveGroundSpeed = 3;
+        this._crouched = true;
+      } else {
+        const p = this._walkCamera.position;
+        const up = this._collision.queryRay(p.x, p.y + 0.1, p.z, 0, 1, 0, 0.85);
+        if (!up) {
+          c.capsuleHeight = 1.5;
+          c.eyeHeight = 1.3;
+          c.moveGroundSpeed = 7;
+          this._crouched = false;
+        }
+      }
+    }
     const x = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
     const z = (keys.forward ? 1 : 0) - (keys.backward ? 1 : 0);
     const stepMode = x !== 0 || z !== 0 ? keys.run ? "run" : "walk" : "none";
@@ -3991,7 +4594,7 @@ Y = walk mode | WASD + E/Q up/down | Shift fast`;
     if (this._hudT > 0.25 && this._hud) {
       this._hudT = 0;
       this._hud.textContent = `pos ${wp.x.toFixed(2)} ${wp.y.toFixed(2)} ${wp.z.toFixed(2)}
-LMB shoot | R reload | WASD Space Shift | Y fly | F respawn | G ball | C clear
+LMB shoot | R reload | C crouch | WASD Space Shift | Y fly | F respawn | G ball | N clear
 X label | V remove | [ ] size | L labels | Backspace delete | B voxels`;
     }
   };
