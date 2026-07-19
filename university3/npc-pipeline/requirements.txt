@@ -1,0 +1,12 @@
+# core pipeline
+requests
+flask
+pillow
+numpy
+opencv-python-headless
+mediapipe==0.10.18
+rembg
+onnxruntime
+trimesh
+pygltflib
+# render_glb.py preview only (needs a CUDA GPU): torch + nvdiffrast (install separately)

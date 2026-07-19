@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SIEGE // REQUISITION TERMINAL</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "./lib/three.module.js",
+  "three/addons/loaders/GLTFLoader.js": "./lib/GLTFLoader.js",
+  "./BufferGeometryUtils.js": "./lib/BufferGeometryUtils.js"
+}}
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fx"></div>
+
+<div id="hud">
+  <div id="cross"><i></i></div>
+
+  <div class="top">
+    <div class="tag">
+      <div class="big">SIEGE<span class="red">//</span>OPS</div>
+      <div class="sub">Sector 7 · Holdout</div>
+    </div>
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <div class="tag sector">
+        <div class="big mono" id="reqCredits">◆ 06</div>
+        <div class="sub">Requisition</div>
+      </div>
+      <button class="req" id="reqBtn"><b>+</b> Requisition&nbsp;Unit</button>
+    </div>
+  </div>
+
+  <div class="boot" id="boot"></div>
+
+  <div class="callin" id="callin">
+    <div class="hd"><span>▣ Call-in</span><span class="t" id="callTimer">00:00</span></div>
+    <div class="bd">
+      <div class="nm" id="callName">UNIT—GRUNT_02</div>
+      <div class="stg" id="callStage">Uplink established</div>
+      <div class="pbar"><span id="pfill"></span></div>
+      <div class="pmeta"><span id="pstage">QUEUED</span><span id="ppct">0%</span></div>
+      <div class="hint">Fabrication runs in background · keep fighting</div>
+    </div>
+  </div>
+
+  <div class="inbound" id="inbound">
+    <div class="big">REINFORCEMENT INBOUND</div>
+    <div class="sub" id="inboundSub">UNIT—GRUNT_02 · DROP CONFIRMED</div>
+  </div>
+
+  <div class="vitals">
+    <div>
+      <div class="row"><span class="lbl">Integrity</span><span class="v mono" id="hpVal">100</span></div>
+      <div class="bar"><span id="hpBar"></span></div>
+    </div>
+    <div class="row ammo">
+      <span class="lbl">Ammunition</span>
+      <span class="v mono"><span id="ammo">31</span><small>/&nbsp;120</small></span>
+    </div>
+  </div>
+
+  <div class="roster brk">
+    <h4>◈ Squad Roster</h4>
+    <div id="roster">
+      <div class="unit"><span class="dot"></span><span class="nm">GRUNT_01</span><span class="st">ACTIVE</span></div>
+    </div>
+  </div>
+
+  <div class="hintbar" id="hintbar">CLICK TO ENGAGE · WASD MOVE · MOUSE LOOK · [R] REQUISITION</div>
+</div>
+
+<input type="file" id="file" accept="image/*" multiple hidden>
+<script type="module" src="app.js"></script>
+</body>
+</html>

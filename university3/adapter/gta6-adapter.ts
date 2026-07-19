@@ -2352,6 +2352,9 @@ class SceneManager {
         });
         sb.appendChild(dz);
 
+        const req = (this.script as any)._requisition;
+        if (req) req.makeCard(sb);
+
         document.body.appendChild(sb);
         this._sidebar = sb;
         this._cardsWrap = wrap;
@@ -3225,9 +3228,9 @@ class FriendSystem {
                 for (const mi of r.meshInstances) mi.cull = false;
             }
             model.setLocalEulerAngles(0, 180, 0);
-            model.addComponent('anim', { activate: true });
             const anims = cfg.asset.resource.animations;
             if (anims && anims.length) {
+                model.addComponent('anim', { activate: true });
                 model.anim.assignAnimation('Walk', anims[0].resource);
             }
             root.setPosition(spot.x, spot.y, spot.z);
@@ -3242,6 +3245,7 @@ class FriendSystem {
                 cfg, root, model, el,
                 p: { x: spot.x, y: spot.y, z: spot.z },
                 target: null,
+                static: !!cfg.generated, // T-pose units stand at attention
                 yaw: Math.random() * 360,
                 fit: { phase: 'scale', wait: 4 },
                 _push: { x: 0, y: 0, z: 0 }
@@ -3266,6 +3270,13 @@ class FriendSystem {
         }
         if (n < 3) return null;
         return { minY, ext: maxY - minY, cx: cx / n, cz: cz / n };
+    }
+
+    /** spawn a freshly generated (T-pose, unrigged) unit near the player */
+    spawnGenerated(name: string, asset: any) {
+        const cfg = { name, asset, generated: true };
+        FRIENDS.push(cfg);
+        this._spawn(cfg);
     }
 
     /** respawn everyone when the location changes */
@@ -3313,6 +3324,21 @@ class FriendSystem {
                 continue;
             }
 
+            // generated units stand at attention, facing the player
+            if (f.static) {
+                const pp = this.npcs._playerPos();
+                const fdx = pp.x - f.p.x, fdz = pp.z - f.p.z;
+                const fd = Math.sqrt(fdx * fdx + fdz * fdz);
+                if (fd > 0.5) {
+                    const targetYaw = Math.atan2(-fdx / fd, -fdz / fd) * 180 / Math.PI;
+                    let dyaw = targetYaw - f.yaw;
+                    while (dyaw > 180) dyaw -= 360;
+                    while (dyaw < -180) dyaw += 360;
+                    f.yaw += Math.max(-120 * dt, Math.min(120 * dt, dyaw));
+                }
+                f.root.setPosition(f.p.x, f.p.y, f.p.z);
+                f.root.setEulerAngles(0, f.yaw, 0);
+            } else
             // perpetual wandering — they're just out for a walk
             if (!f.target) {
                 const spot = this.npcs._randomFloorSpot();
@@ -3360,6 +3386,122 @@ class FriendSystem {
                     f.el.style.top = `${this._screenPos.y * (canvas.clientHeight / canvas.height)}px`;
                 }
             }
+        }
+    }
+}
+
+// ---- requisition: photos → T-pose character via the npc-pipeline server ----
+
+const NPC_PIPELINE_URL = 'http://localhost:8799';
+
+class RequisitionSystem {
+    app: any;
+    script: any;
+    base: string;
+    _cardStatus: any = null;
+
+    constructor(app: any, script: any) {
+        this.app = app;
+        this.script = script;
+        let base = NPC_PIPELINE_URL;
+        try {
+            const q = new URLSearchParams(window.location.search);
+            base = q.get('npc') || base;
+        } catch (e) { /* headless */ }
+        this.base = base.replace(/\/+$/, '');
+    }
+
+    /** sidebar hook: build the "requisition" card */
+    makeCard(container: any) {
+        const card = document.createElement('div');
+        card.id = 'sg-requisition';
+        card.style.cssText = 'border:1.5px dashed rgba(255,255,255,0.22);border-radius:10px;padding:12px 10px;text-align:center;font-size:11px;color:var(--sg-muted);cursor:pointer;flex-shrink:0;';
+        card.innerHTML = '📸 requisition NPC<br><span style="font-size:10px;opacity:0.7">photos of a person → in-game character</span>';
+        const status = document.createElement('div');
+        status.style.cssText = 'font-size:10px;margin-top:6px;color:#93c5fd;display:none;';
+        card.appendChild(status);
+        this._cardStatus = status;
+
+        card.addEventListener('click', () => {
+            const inp = document.createElement('input');
+            inp.type = 'file';
+            inp.accept = 'image/*';
+            inp.multiple = true;
+            inp.onchange = () => {
+                const files = inp.files;
+                if (files && files.length) this.requisition(Array.from(files));
+            };
+            inp.click();
+        });
+        container.appendChild(card);
+    }
+
+    _status(text: string) {
+        if (this._cardStatus) {
+            this._cardStatus.style.display = 'block';
+            this._cardStatus.textContent = text;
+        }
+        const d = this.script._director;
+        if (d) d._feedMsg(text);
+    }
+
+    async requisition(files: any[]) {
+        const name = (window.prompt('Name this unit:', 'recruit') || 'recruit').slice(0, 16);
+        try {
+            this._status(`${name}: uploading ${files.length} photo(s)…`);
+            const fd = new FormData();
+            fd.append('name', name);
+            for (const f of files) fd.append('images', f);
+            const r = await fetch(`${this.base}/npc/generate`, { method: 'POST', body: fd });
+            if (!r.ok) throw new Error(`server ${r.status}`);
+            const { job_id } = await r.json();
+            this._poll(job_id, name);
+        } catch (e: any) {
+            this._status(`${name}: pipeline offline (${e && e.message || e})`);
+        }
+    }
+
+    async _poll(jobId: string, name: string) {
+        try {
+            const r = await fetch(`${this.base}/npc/status/${jobId}`);
+            const st = await r.json();
+            if (st.status === 'SUCCEEDED' || st.download_url) {
+                this._status(`${name}: downloading…`);
+                const g = await fetch(`${this.base}/npc/download/${jobId}`);
+                if (!g.ok) throw new Error(`download ${g.status}`);
+                const blob = await g.blob();
+                this._materialize(name, blob);
+                return;
+            }
+            if (st.status === 'FAILED' || st.error) {
+                this._status(`${name}: generation failed (${st.error || 'unknown'})`);
+                return;
+            }
+            this._status(`${name}: ${st.stage || 'generating'} ${st.progress != null ? st.progress + '%' : ''}`);
+            setTimeout(() => this._poll(jobId, name), 4000);
+        } catch (e: any) {
+            this._status(`${name}: lost pipeline (${e && e.message || e})`);
+        }
+    }
+
+    _materialize(name: string, blob: any) {
+        try {
+            const url = URL.createObjectURL(blob);
+            const asset = new pc.Asset(`req-${name}.glb`, 'container', { url, filename: 'unit.glb' });
+            asset.on('load', () => {
+                const friends = this.script._friends;
+                if (friends) {
+                    friends.spawnGenerated(name, asset);
+                    this._status(`${name}: unit deployed ✓`);
+                } else {
+                    this._status(`${name}: no friend system`);
+                }
+            });
+            asset.on('error', (err: string) => this._status(`${name}: model failed (${err})`));
+            this.app.assets.add(asset);
+            this.app.assets.load(asset);
+        } catch (e: any) {
+            this._status(`${name}: materialize failed`);
         }
     }
 }
@@ -3923,6 +4065,12 @@ WalkScript.prototype.initialize = function (this: any) {
     } catch (e) {
         console.error('drop system init failed', e);
         this._drops = null;
+    }
+    try {
+        this._requisition = new RequisitionSystem(this.app, this);
+    } catch (e) {
+        console.error('requisition init failed', e);
+        this._requisition = null;
     }
     try {
         this._scenes = new SceneManager(this.app, collision, controller, walkCamera, this);
