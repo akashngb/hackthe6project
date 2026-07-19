@@ -1,10 +1,19 @@
-# GLB Rig Viewer
+# GLB + Splat Viewers
 
-Standalone three.js (r185) test harness for validating rigged/animated human GLBs
-before wiring them into the pipeline. Confirms an asset is genuinely riggable
-(skinned mesh + bones) and plays its animation clips.
+Standalone three.js (r185) test harnesses for inspecting the two output types the
+pipeline produces, before wiring them into anything:
+
+- **`index.html`** — GLB rig viewer. Confirms an asset is genuinely riggable
+  (skinned mesh + bones) and plays its animation clips. For mesh models
+  (TRELLIS / PSHuman / Meshy → GLB).
+- **`splat.html`** — Gaussian splat viewer (`.ply` / `.splat` / `.ksplat`, via
+  @mkkellogg/gaussian-splats-3d). For gaussian models (LHM / TRELLIS → `.ply`).
 
 Independent of the PlayCanvas project in the repo root — touches nothing there.
+
+> **Splat viewer note:** built but not browser-tested in this environment. If a
+> `.ply` won't render, drag it onto **https://superspl.at** instead — PlayCanvas's
+> hosted splat viewer/editor, zero setup and matches the engine you're using.
 
 ## Run
 

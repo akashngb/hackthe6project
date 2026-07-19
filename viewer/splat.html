@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Splat / PLY Viewer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #14161a; color: #e6e6e6; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; }
+
+  #panel {
+    position: fixed; top: 12px; left: 12px; width: 300px; z-index: 5;
+    background: rgba(20,22,26,.86); border: 1px solid #2c2f36; border-radius: 10px;
+    padding: 14px; font-size: 12px; line-height: 1.5; backdrop-filter: blur(6px);
+  }
+  #panel h1 { font-size: 13px; margin: 0 0 8px; letter-spacing: .04em; }
+  #panel .row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+  #panel .row b { color: #9aa4b2; font-weight: 500; }
+  #panel .ok { color: #6ee7a8; } #panel .no { color: #ff8a8a; }
+  #panel hr { border: none; border-top: 1px solid #2c2f36; margin: 10px 0; }
+  label.field { display: block; margin: 8px 0 4px; color: #9aa4b2; }
+  button { font: inherit; padding: 6px 8px; background: #21242b; color: #e6e6e6; border: 1px solid #3a3e47; border-radius: 6px; cursor: pointer; }
+  button:hover { border-color: #5a6070; }
+  .btnrow { display: flex; gap: 6px; margin-top: 6px; }
+  .btnrow button { flex: 1; }
+  input[type=file] { width: 100%; }
+  #hint { color: #7b8494; margin-top: 10px; font-size: 11px; }
+  #err { color: #ff8a8a; margin-top: 8px; white-space: pre-wrap; word-break: break-word; }
+  #drop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(20,120,200,.18); border: 3px dashed #4aa3ff; z-index: 10; font-size: 20px; pointer-events: none; }
+  #drop.on { display: flex; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="drop">drop a .ply / .splat / .ksplat here</div>
+
+<div id="panel">
+  <h1>SPLAT / PLY VIEWER</h1>
+  <div class="row"><b>file</b><span id="fname">none</span></div>
+  <div class="row"><b>format</b><span id="fmt">--</span></div>
+  <div class="row"><b>splats</b><span id="count">--</span></div>
+  <div class="row"><b>status</b><span id="status">idle</span></div>
+
+  <hr />
+  <label class="field" for="file">load a splat</label>
+  <input id="file" type="file" accept=".ply,.splat,.ksplat" />
+  <div class="btnrow">
+    <button id="flip">flip up-axis</button>
+    <button id="reset">reset view</button>
+  </div>
+  <div id="hint">Renders gaussian splats (INRIA .ply, .splat, .ksplat) — e.g. the
+    .ply out of LHM/TRELLIS. 3DGS scenes are often Y-down; if it loads upside
+    down, hit "flip up-axis". For a zero-setup alternative, drag the same file
+    onto <b>superspl.at</b>.</div>
+  <div id="err"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/",
+    "@mkkellogg/gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
+
+const $ = (id) => document.getElementById(id);
+const stage = $('stage');
+let viewer = null;
+let flipUp = false;
+let lastURL = null;
+let lastName = '';
+let lastFormat = null;
+
+function formatFor(name) {
+  const n = name.toLowerCase();
+  if (n.endsWith('.ksplat')) return GaussianSplats3D.SceneFormat.KSplat;
+  if (n.endsWith('.splat')) return GaussianSplats3D.SceneFormat.Splat;
+  return GaussianSplats3D.SceneFormat.Ply; // default & most common from LHM/TRELLIS
+}
+const fmtName = (f) =>
+  f === GaussianSplats3D.SceneFormat.KSplat ? 'ksplat' :
+  f === GaussianSplats3D.SceneFormat.Splat ? 'splat' : 'ply';
+
+async function disposeViewer() {
+  if (!viewer) return;
+  try { await viewer.dispose(); } catch (e) { /* ignore */ }
+  viewer = null;
+  // clear any leftover canvas the viewer appended
+  while (stage.firstChild) stage.removeChild(stage.firstChild);
+}
+
+async function loadSplat(url, name, format) {
+  $('err').textContent = '';
+  $('status').textContent = 'loading…';
+  $('fname').textContent = name;
+  $('fmt').textContent = fmtName(format);
+  lastURL = url; lastName = name; lastFormat = format;
+
+  await disposeViewer();
+
+  // sharedMemoryForWorkers:false avoids the COOP/COEP header requirement so this
+  // works off a plain static server. cameraUp flips for Y-down 3DGS scenes.
+  viewer = new GaussianSplats3D.Viewer({
+    rootElement: stage,
+    sharedMemoryForWorkers: false,
+    cameraUp: flipUp ? [0, -1, 0] : [0, 1, 0],
+    initialCameraPosition: [0, 0, 4],
+    initialCameraLookAt: [0, 0, 0],
+    useBuiltInControls: true,
+    selfDrivenMode: true,
+  });
+
+  try {
+    await viewer.addSplatScene(url, {
+      format,
+      progressiveLoad: true,
+      showLoadingUI: false,
+    });
+    viewer.start();
+    $('status').innerHTML = '<span class="ok">rendering</span>';
+    // best-effort splat count (API guarded)
+    try {
+      const c = viewer.splatMesh && viewer.splatMesh.getSplatCount
+        ? viewer.splatMesh.getSplatCount() : null;
+      $('count').textContent = c != null ? c.toLocaleString() : 'n/a';
+    } catch { $('count').textContent = 'n/a'; }
+  } catch (e) {
+    $('status').innerHTML = '<span class="no">error</span>';
+    $('err').textContent = 'load error: ' + (e?.message || e) +
+      '\nIf this file will not render here, try superspl.at';
+  }
+}
+
+$('file').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (f) loadSplat(URL.createObjectURL(f), f.name, formatFor(f.name));
+});
+
+$('flip').addEventListener('click', () => {
+  flipUp = !flipUp;
+  if (lastURL) loadSplat(lastURL, lastName, lastFormat); // reload with new up-axis
+});
+
+$('reset').addEventListener('click', () => {
+  if (lastURL) loadSplat(lastURL, lastName, lastFormat);
+});
+
+// drag & drop
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((ev) =>
+  window.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('on'); }));
+['dragleave', 'drop'].forEach((ev) =>
+  window.addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'drop') drop.classList.remove('on'); }));
+window.addEventListener('drop', (e) => {
+  e.preventDefault(); drop.classList.remove('on');
+  const f = e.dataTransfer.files[0];
+  if (f && /\.(ply|splat|ksplat)$/i.test(f.name)) loadSplat(URL.createObjectURL(f), f.name, formatFor(f.name));
+});
+
+// ?url= to auto-load
+const qp = new URLSearchParams(location.search).get('url');
+if (qp) loadSplat(qp, qp.split('/').pop(), formatFor(qp));
+</script>
+</body>
+</html>
