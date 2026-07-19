@@ -1825,10 +1825,10 @@
     _syncTag(npc) {
       if (!npc.el) return;
       if (npc.state === "dying" || npc.state === "dead") {
-        npc.el.textContent = (npc.pers ? npc.pers.name : "soldier") + " \u2620";
+        npc.el.textContent = "\u2620";
         npc.el.style.background = "rgba(120,20,20,0.8)";
       } else {
-        npc.el.textContent = `${npc.pers ? npc.pers.name : "soldier"} ${"\u2665".repeat(npc.hp)}`;
+        npc.el.textContent = "\u2665".repeat(Math.max(0, npc.hp));
         npc.el.style.background = "rgba(30,30,30,0.75)";
       }
     }
