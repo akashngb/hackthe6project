@@ -313,7 +313,7 @@ const NPC_PERSONALITIES = [
 /** combat tuning (from npc-controller.js / npc-ai.js, rebalanced for gameplay) */
 const NPC_SIGHT_RANGE = 22;
 /** soldiers must be this close before they open fire (they advance otherwise) */
-const NPC_FIRE_RANGE = 11;
+const NPC_FIRE_RANGE = 6;
 const NPC_HEARING_RANGE = 3;
 const NPC_LKP_MEMORY_MS = 10000;
 const NPC_SHOT_DAMAGE = 8;
@@ -678,8 +678,10 @@ class NpcSystem {
             npc.el.textContent = '☠';
             npc.el.style.background = 'rgba(120,20,20,0.8)';
         } else {
-            npc.el.textContent = '♥'.repeat(Math.max(0, npc.hp));
-            npc.el.style.background = 'rgba(30,30,30,0.75)';
+            const pct = Math.max(0, Math.min(1, npc.hp / 3)) * 100;
+            npc.el.textContent = '';
+            npc.el.style.background = 'rgba(9,9,11,0.9)';
+            npc.el.innerHTML = `<div style="width:34px;height:3px;border-radius:9999px;background:rgba(255,255,255,0.15);overflow:hidden"><div style="width:${pct}%;height:100%;border-radius:9999px;background:var(--destructive)"></div></div>`;
         }
     }
 
@@ -1016,7 +1018,7 @@ class NpcSystem {
 
                 // advance until inside firing range; aggressive personalities
                 // keep pushing to point-blank (npc-ai.js _pushing)
-                const holdDist = npc.pers.aggression > 0.6 ? 6 : NPC_FIRE_RANGE * 0.85;
+                const holdDist = npc.pers.aggression > 0.6 ? 3 : NPC_FIRE_RANGE * 0.85;
                 if (dist > holdDist) {
                     const nx = dx / dist, nz = dz / dist;
                     npc.p.x += nx * NPC_WALK_SPEED * this.walkSpeedMul * dt;
@@ -2246,6 +2248,7 @@ const SCENES: any[] = [
         voxel: 'embedded',
         spawn: { x: -0.22, y: 0.75, z: 0.05 },
         rot: [0, 0, 180],
+        noNpcs: true, // soldiers only — no wandering friends
         faceTarget: { x: -0.1, z: -10 } // spawn/respawn looking down the hallway
     },
     {
@@ -2276,6 +2279,7 @@ const SCENES: any[] = [
         voxelBin: [298987765, 'classroom.voxel.bin'],
         spawn: { x: -1.54, y: 0.3, z: -6.26 },
         rot: [0, 0, 180],
+        noNpcs: true, // soldiers only — no wandering friends
         faceTarget: { x: 0.8, z: 1.5 }, // spawn facing into the room (the tables)
         portals: [
             { x: -1.54, y: 0.3, z: -6.26, radius: 1.4, to: 4, spawnAt: { x: 9.46, y: 0.42, z: 7.25 }, label: '→ Bahen Hallway' }
@@ -2804,6 +2808,19 @@ const UI_CSS = `
 #sg-dropzone,#sg-requisition{border:1px dashed #3f3f46;border-radius:var(--radius-md);padding:14px 10px;text-align:center;font-size:11px;color:var(--muted-fg);cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;flex-shrink:0;}
 #sg-dropzone:hover,#sg-dropzone.over,#sg-requisition:hover{border-color:var(--ring);color:var(--foreground);background:rgba(255,255,255,0.03);}
 .fs-reticle{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;z-index:9998;pointer-events:none;border-radius:9999px;background:rgba(250,250,250,0.9);box-shadow:0 0 0 1px rgba(9,9,11,0.6);}
+@keyframes splUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@keyframes splCam{0%{transform:scale(1.04) translate3d(-2.5%,-1%,0)}50%{transform:scale(1.16) translate3d(2.5%,1.5%,0)}100%{transform:scale(1.04) translate3d(-2.5%,-1%,0)}}
+@keyframes splLight{0%,100%{opacity:0.22;transform:translateX(-8%)}50%{opacity:0.42;transform:translateX(8%)}}
+@keyframes splHaze{0%,100%{opacity:0.14;transform:translateY(1.5%)}50%{opacity:0.25;transform:translateY(-1.5%)}}
+.spl-up{opacity:0;animation:splUp 0.9s cubic-bezier(0.16,1,0.3,1) forwards;}
+.spl-camera{animation:splCam 12s ease-in-out infinite;will-change:transform;}
+.spl-light{background:linear-gradient(108deg,transparent 30%,oklch(0.82 0.10 75 / 12%) 50%,transparent 68%);animation:splLight 14s ease-in-out infinite;mix-blend-mode:screen;}
+.spl-haze{background:linear-gradient(to top,oklch(0.55 0.04 240 / 22%),transparent 45%);animation:splHaze 11s ease-in-out infinite;}
+.spl-grain{opacity:0.055;mix-blend-mode:soft-light;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");}
+.spl-btn{display:inline-flex;align-items:center;gap:12px;padding:16px 40px;background:var(--foreground);color:#09090b;font-size:13px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;transition:background 0.3s;border-radius:2px;}
+.spl-btn:hover{background:oklch(0.75 0.08 70);}
+.spl-btn:hover svg{transform:translateX(4px);}
+.spl-btn svg{transition:transform 0.3s;}
 .sg-progress{height:8px;border-radius:9999px;background:var(--muted);overflow:hidden;}
 .sg-progress>div{height:100%;border-radius:9999px;background:var(--primary);transition:width 0.15s;}
 `;
@@ -3249,6 +3266,7 @@ const FRIENDS: any[] = [
     { name: 'Akash', assetId: 298998118, fname: 'friend-akash.glb' },
     { name: 'Kelly', assetId: 298998127, fname: 'friend-kelly.glb' }
 ];
+const FRIENDS_ENABLED = false; // human NPCs hidden
 const FRIEND_HEIGHT = 1.72;
 const FRIEND_SPEED = 1.0;
 
@@ -3291,6 +3309,7 @@ class FriendSystem {
     }
 
     _spawn(cfg: any) {
+        if (!FRIENDS_ENABLED) return;
         const sc = this.scenes ? SCENES[this.scenes.current] : null;
         if (sc && sc.noNpcs) return;
         try {
@@ -3312,14 +3331,8 @@ class FriendSystem {
             }
             root.setPosition(spot.x, spot.y, spot.z);
 
-            const el = document.createElement('div');
-            el.className = 'sg sg-mono';
-            el.style.cssText = 'position:fixed;transform:translate(-50%,-100%);z-index:9997;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:var(--ok);border:1px solid rgba(52,211,153,0.4);';
-            el.textContent = cfg.name;
-            document.body.appendChild(el);
-
             this.friends.push({
-                cfg, root, model, el,
+                cfg, root, model, el: null,
                 p: { x: spot.x, y: spot.y, z: spot.z },
                 target: null,
                 static: !!cfg.generated, // T-pose units stand at attention
@@ -3640,10 +3653,12 @@ class GameDirector {
         this._banner.className = 'sg sg-panel';
         this._hud = mk('position:fixed;top:16px;left:16px;z-index:10001;pointer-events:none;padding:10px 16px;min-width:180px;');
         this._hud.className = 'sg sg-panel';
-        this._feed = mk('position:fixed;top:112px;left:16px;z-index:10001;pointer-events:none;font-family:var(--font);font-size:11px;color:var(--muted-fg);display:flex;flex-direction:column;gap:3px;');
+        this._hud.style.display = 'none'; // clean gameplay — no status card
+        this._feed = mk('display:none;position:fixed;top:112px;left:16px;z-index:10001;pointer-events:none;font-family:var(--font);font-size:11px;color:var(--muted-fg);display:flex;flex-direction:column;gap:3px;');
         this._feed.className = 'sg sg-mono';
         const hpWrap = mk('position:fixed;bottom:20px;left:16px;z-index:10001;width:230px;padding:10px 14px;pointer-events:none;');
         hpWrap.className = 'sg sg-panel';
+        hpWrap.style.display = 'none'; // clean gameplay — no health bar
         hpWrap.innerHTML = '<div style="font-size:11px;font-weight:500;color:var(--muted-fg);margin-bottom:6px;display:flex;justify-content:space-between"><span>Health</span></div>';
         const hpBar = document.createElement('div');
         hpBar.className = 'sg-progress';
@@ -3697,16 +3712,88 @@ class GameDirector {
     _showTitle() {
         this.state = 'title';
         this._overlay.style.display = 'flex';
+        let bg = '', bg2 = '';
+        try {
+            const cfg = (window as any).config;
+            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
+            bg = `${window.location.origin}/api/assets/299000418/file/title-bg.png?branchId=${bid}`;
+            bg2 = `${window.location.origin}/api/assets/299000831/file/title-bg-2.png?branchId=${bid}`;
+        } catch (e) { /* headless */ }
+        const key = (k: string, l: string) =>
+            `<span><span style="font-weight:600;color:var(--foreground)">${k}</span> <span style="color:rgba(250,250,250,0.5)">${l}</span></span>`;
         this._overlay.innerHTML =
-            '<div style="font-size:12px;font-weight:500;color:var(--muted-fg);margin-bottom:16px">University of Toronto · 43.6596° N, 79.3976° W</div>' +
-            '<div style="font-size:72px;font-weight:700;letter-spacing:-0.03em;line-height:1;color:var(--foreground)">SIEGE</div>' +
-            '<div style="font-size:14px;color:var(--muted-fg);margin:16px 0 36px;max-width:420px;line-height:1.6">Reality, scanned. Now defend it — a wave shooter inside real Gaussian-splat scans of campus.</div>' +
-            '<div class="sg-panel" style="padding:14px 22px;font-size:12px;line-height:2.1;color:var(--muted-fg);text-align:left">' +
-              '<span style="color:var(--foreground);font-weight:500">WASD</span> move · <span style="color:var(--foreground);font-weight:500">Shift</span> run · <span style="color:var(--foreground);font-weight:500">Space</span> jump · <span style="color:var(--foreground);font-weight:500">C</span> crouch<br>' +
-              '<span style="color:var(--foreground);font-weight:500">LMB</span> fire · <span style="color:var(--foreground);font-weight:500">R</span> reload · <span style="color:var(--foreground);font-weight:500">T</span> targets · <span style="color:var(--foreground);font-weight:500">M</span> locations · <span style="color:var(--foreground);font-weight:500">B</span> voxels' +
+            '<div style="position:absolute;inset:0;overflow:hidden" aria-hidden="true">' +
+              `<div class="spl-camera" style="position:absolute;inset:-32px">` +
+                `<img id="spl-bg-a" src="${bg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 1.1s ease;opacity:1">` +
+                `<img id="spl-bg-b" src="${bg2}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 1.1s ease;opacity:0">` +
+              '</div>' +
+              '<div class="spl-light" style="position:absolute;inset:0"></div>' +
+              '<div class="spl-haze" style="position:absolute;inset:0"></div>' +
+              '<div style="position:absolute;inset:0;background:rgba(9,9,11,0.55)"></div>' +
+              '<div style="position:absolute;inset:0;background:radial-gradient(ellipse 72% 68% at 50% 48%,transparent 28%,rgba(9,9,11,0.86) 100%)"></div>' +
+              '<div class="spl-grain" style="position:absolute;inset:0"></div>' +
+              '<div style="position:absolute;top:0;left:0;right:0;height:1px;background:rgba(250,250,250,0.1)"></div>' +
             '</div>' +
-            '<div class="sg-btn" style="margin-top:36px">Click to start</div>' +
-            '<div style="margin-top:14px;font-size:11px;color:var(--muted-fg)">Drop a scan .zip anywhere — any room becomes a level</div>';
+            '<div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:28px;max-width:640px;padding:0 24px;margin-top:32px">' +
+              '<div class="spl-up sg-mono" style="animation-delay:0.2s;font-size:11px;letter-spacing:0.25em;text-transform:uppercase;color:rgba(250,250,250,0.5);font-weight:500">University of Toronto</div>' +
+              '<div class="spl-up" style="animation-delay:0.2s;position:relative;width:min(90vw,900px);height:clamp(64px,14vw,144px);filter:url(#spl-threshold) blur(0.6px)">' +
+                '<span id="spl-t1" style="position:absolute;inset:0;font-weight:900;font-size:clamp(64px,14vw,144px);line-height:1;letter-spacing:-0.03em;color:var(--foreground)"></span>' +
+                '<span id="spl-t2" style="position:absolute;inset:0;font-weight:900;font-size:clamp(64px,14vw,144px);line-height:1;letter-spacing:-0.03em;color:var(--foreground)"></span>' +
+              '</div>' +
+              '<svg width="0" height="0" style="position:absolute"><defs><filter id="spl-threshold"><feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 255 -140"/></filter></defs></svg>' +
+              '<div class="spl-up" style="animation-delay:0.6s;border:1px solid rgba(255,255,255,0.1);background:rgba(13,13,16,0.8);backdrop-filter:blur(4px);padding:16px 24px;display:flex;flex-direction:column;gap:8px">' +
+                `<div style="display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font-size:14px">${key('WASD','move')}${key('Shift','run')}${key('Space','jump')}${key('C','crouch')}</div>` +
+                `<div style="display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font-size:14px">${key('LMB','fire')}${key('R','reload')}${key('T','targets')}${key('M','map')}</div>` +
+              '</div>' +
+              '<div class="spl-up spl-btn" style="animation-delay:0.8s">Click to start' +
+                '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+              '</div>' +
+            '</div>';
+        // gooey morphing wordmark (ported from MagicUI MorphingText):
+        // SPLAT <-> THE 6IX, background cross-cuts on every switch
+        try {
+            const texts = ['SPLAT', 'THE 6IX'];
+            const morphTime = 1.5, cooldownTime = 0.5;
+            const t1: any = document.getElementById('spl-t1');
+            const t2: any = document.getElementById('spl-t2');
+            const bgEls = [document.getElementById('spl-bg-a'), document.getElementById('spl-bg-b')];
+            let idx = 0, morph = 0, cooldown = 0, lastT = performance.now();
+            const setBg = (i2: number) => {
+                for (let k = 0; k < 2; k++) {
+                    const el: any = bgEls[k];
+                    if (el) el.style.opacity = (i2 % 2 === k) ? '1' : '0';
+                }
+            };
+            const setStyles = (fraction: number) => {
+                t2.style.filter = `blur(${Math.min(8 / fraction - 8, 100)}px)`;
+                t2.style.opacity = `${Math.pow(fraction, 0.4) * 100}%`;
+                const inv = 1 - fraction;
+                t1.style.filter = `blur(${Math.min(8 / inv - 8, 100)}px)`;
+                t1.style.opacity = `${Math.pow(inv, 0.4) * 100}%`;
+                t1.textContent = texts[idx % texts.length];
+                t2.textContent = texts[(idx + 1) % texts.length];
+            };
+            const tick = () => {
+                if (this.state !== 'title' || !t1.isConnected) { this._titleRaf = 0; return; }
+                this._titleRaf = requestAnimationFrame(tick);
+                const now = performance.now();
+                const dt = (now - lastT) / 1000;
+                lastT = now;
+                cooldown -= dt;
+                if (cooldown <= 0) {
+                    morph -= cooldown; cooldown = 0;
+                    let fraction = morph / morphTime;
+                    if (fraction > 1) { cooldown = cooldownTime; fraction = 1; morph = 0; }
+                    setStyles(fraction);
+                    if (fraction === 1) { idx++; setBg(idx); }
+                } else {
+                    morph = 0;
+                    t2.style.filter = 'none'; t2.style.opacity = '100%';
+                    t1.style.filter = 'none'; t1.style.opacity = '0%';
+                }
+            };
+            if (t1 && t2) { setBg(0); setStyles(0); tick(); }
+        } catch (e) { /* headless */ }
     }
 
     _start() {
@@ -3863,7 +3950,7 @@ WalkScript.prototype.initialize = function (this: any) {
         this._coordBox = document.createElement('div');
         this._coordBox.id = 'coord-box';
         this._coordBox.className = 'sg sg-panel sg-mono';
-        this._coordBox.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10001;font-size:11px;color:var(--muted-fg);padding:5px 16px;border-radius:9999px;pointer-events:none;';
+        this._coordBox.style.cssText = 'display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10001;font-size:11px;color:var(--muted-fg);padding:5px 16px;border-radius:9999px;pointer-events:none;';
         document.body.appendChild(this._coordBox);
     }
     this._coordT = 0;
