@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GLB Rig Viewer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #14161a; color: #e6e6e6; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  #panel {
+    position: fixed; top: 12px; left: 12px; width: 300px; max-height: calc(100% - 24px);
+    overflow-y: auto; background: rgba(20,22,26,.86); border: 1px solid #2c2f36;
+    border-radius: 10px; padding: 14px; font-size: 12px; line-height: 1.5; backdrop-filter: blur(6px);
+  }
+  #panel h1 { font-size: 13px; margin: 0 0 8px; letter-spacing: .04em; }
+  #panel .row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+  #panel .row b { color: #9aa4b2; font-weight: 500; }
+  #panel .ok { color: #6ee7a8; }
+  #panel .no { color: #ff8a8a; }
+  #panel hr { border: none; border-top: 1px solid #2c2f36; margin: 10px 0; }
+  #panel label.field { display: block; margin: 8px 0 4px; color: #9aa4b2; }
+  select, button { font: inherit; width: 100%; padding: 6px 8px; background: #21242b; color: #e6e6e6;
+    border: 1px solid #3a3e47; border-radius: 6px; cursor: pointer; }
+  button:hover, select:hover { border-color: #5a6070; }
+  .btnrow { display: flex; gap: 6px; margin-top: 6px; }
+  .btnrow button { flex: 1; }
+  #clips { margin-top: 4px; }
+  #hint { color: #7b8494; margin-top: 10px; font-size: 11px; }
+  #drop {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(20,120,200,.18); border: 3px dashed #4aa3ff; z-index: 10;
+    font-size: 20px; letter-spacing: .05em; pointer-events: none;
+  }
+  #drop.on { display: flex; }
+  #err { color: #ff8a8a; margin-top: 8px; white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="drop">drop a .glb / .gltf here</div>
+
+<div id="panel">
+  <h1>GLB RIG VIEWER</h1>
+  <div class="row"><b>file</b><span id="fname">none</span></div>
+  <div class="row"><b>skinned mesh</b><span id="skinned">--</span></div>
+  <div class="row"><b>bones</b><span id="bones">--</span></div>
+  <div class="row"><b>meshes</b><span id="meshes">--</span></div>
+  <div class="row"><b>morph targets</b><span id="morphs">--</span></div>
+  <div class="row"><b>animations</b><span id="animcount">--</span></div>
+  <div class="row"><b>triangles</b><span id="tris">--</span></div>
+
+  <hr />
+  <label class="field" for="clips">animation clip</label>
+  <select id="clips"><option>—</option></select>
+  <div class="btnrow">
+    <button id="playpause">pause</button>
+    <button id="skelbtn">show skeleton</button>
+  </div>
+  <div class="btnrow">
+    <button id="wirebtn">wireframe</button>
+    <button id="framebtn">reframe</button>
+  </div>
+
+  <hr />
+  <label class="field" for="file">load a file</label>
+  <input id="file" type="file" accept=".glb,.gltf" />
+  <div id="hint">Or drag a file onto the window. Load one of the three.js
+    sample rigs (Soldier.glb / Xbot.glb) to confirm the harness works, then
+    drop your LHM / TRELLIS output.</div>
+  <div id="err"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const $ = (id) => document.getElementById(id);
+const CDN = 'https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/libs/';
+
+// ---- renderer / scene / camera ----------------------------------------
+const app = $('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14161a);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
+camera.position.set(0, 1.4, 3);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 1, 0);
+
+// lights (env handles most; add a key + fill so unlit/vertex-color assets read)
+scene.add(new THREE.HemisphereLight(0xffffff, 0x333844, 1.2));
+const key = new THREE.DirectionalLight(0xffffff, 2.0);
+key.position.set(3, 6, 4);
+scene.add(key);
+
+// ground grid
+const grid = new THREE.GridHelper(10, 20, 0x2c2f36, 0x22252b);
+scene.add(grid);
+
+// ---- loader with compression support ----------------------------------
+const draco = new DRACOLoader().setDecoderPath(CDN + 'draco/gltf/');
+const ktx2 = new KTX2Loader().setTranscoderPath(CDN + 'basis/').detectSupport(renderer);
+const loader = new GLTFLoader()
+  .setDRACOLoader(draco)
+  .setKTX2Loader(ktx2)
+  .setMeshoptDecoder(MeshoptDecoder);
+
+// ---- state ------------------------------------------------------------
+let mixer = null;
+let current = null;       // root Object3D of loaded model
+let clips = [];
+let action = null;
+let skeletonHelper = null;
+let wireframe = false;
+let playing = true;
+const clock = new THREE.Clock();
+
+function disposeCurrent() {
+  if (!current) return;
+  scene.remove(current);
+  current.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => m.dispose());
+    }
+  });
+  if (skeletonHelper) { scene.remove(skeletonHelper); skeletonHelper = null; }
+  current = null; mixer = null; clips = []; action = null;
+}
+
+function analyze(root) {
+  let skinned = 0, bones = 0, meshes = 0, morphs = 0, tris = 0;
+  const boneSet = new Set();
+  root.traverse((o) => {
+    if (o.isBone) boneSet.add(o);
+    if (o.isMesh || o.isSkinnedMesh) {
+      meshes++;
+      const g = o.geometry;
+      if (g) {
+        const count = g.index ? g.index.count : (g.attributes.position ? g.attributes.position.count : 0);
+        tris += count / 3;
+      }
+      if (o.morphTargetInfluences) morphs += o.morphTargetInfluences.length;
+    }
+    if (o.isSkinnedMesh) {
+      skinned++;
+      if (o.skeleton) o.skeleton.bones.forEach((b) => boneSet.add(b));
+    }
+  });
+  bones = boneSet.size;
+
+  $('skinned').innerHTML = skinned > 0
+    ? `<span class="ok">yes (${skinned})</span>`
+    : `<span class="no">no — static</span>`;
+  $('bones').textContent = bones || '0';
+  $('meshes').textContent = meshes;
+  $('morphs').textContent = morphs || '0';
+  $('animcount').innerHTML = clips.length > 0
+    ? `<span class="ok">${clips.length}</span>`
+    : `<span class="no">0</span>`;
+  $('tris').textContent = Math.round(tris).toLocaleString();
+}
+
+function frameModel(root) {
+  const box = new THREE.Box3().setFromObject(root);
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = maxDim / (2 * Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.6;
+  controls.target.copy(center);
+  camera.position.set(center.x, center.y + size.y * 0.1, center.z + dist);
+  camera.near = maxDim / 100;
+  camera.far = maxDim * 100;
+  camera.updateProjectionMatrix();
+  controls.update();
+  // sit the grid at the model's feet
+  grid.position.y = box.min.y;
+}
+
+function populateClips() {
+  const sel = $('clips');
+  sel.innerHTML = '';
+  if (!clips.length) { sel.innerHTML = '<option>— none —</option>'; return; }
+  clips.forEach((c, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${i}: ${c.name || 'clip'} (${c.duration.toFixed(2)}s)`;
+    sel.appendChild(opt);
+  });
+  playClip(0);
+}
+
+function playClip(i) {
+  if (!mixer || !clips[i]) return;
+  if (action) action.stop();
+  action = mixer.clipAction(clips[i]);
+  action.reset().play();
+  playing = true; $('playpause').textContent = 'pause';
+}
+
+function onLoaded(gltf, name) {
+  disposeCurrent();
+  current = gltf.scene || gltf.scenes[0];
+  scene.add(current);
+  clips = gltf.animations || [];
+  mixer = clips.length ? new THREE.AnimationMixer(current) : null;
+
+  $('fname').textContent = name;
+  $('err').textContent = '';
+  wireframe = false; $('wirebtn').textContent = 'wireframe';
+
+  analyze(current);
+  frameModel(current);
+  populateClips();
+}
+
+function loadURL(url, name) {
+  $('err').textContent = '';
+  loader.load(url, (g) => onLoaded(g, name), undefined, (e) => {
+    $('err').textContent = 'load error: ' + (e?.message || e);
+  });
+}
+
+function loadFile(file) {
+  const url = URL.createObjectURL(file);
+  loader.load(url, (g) => { onLoaded(g, file.name); URL.revokeObjectURL(url); },
+    undefined,
+    (e) => { $('err').textContent = 'load error: ' + (e?.message || e); URL.revokeObjectURL(url); });
+}
+
+// ---- UI wiring --------------------------------------------------------
+$('file').addEventListener('change', (e) => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+$('clips').addEventListener('change', (e) => playClip(+e.target.value));
+
+$('playpause').addEventListener('click', () => {
+  if (!action) return;
+  playing = !playing;
+  action.paused = !playing;
+  $('playpause').textContent = playing ? 'pause' : 'play';
+});
+
+$('skelbtn').addEventListener('click', () => {
+  if (!current) return;
+  if (skeletonHelper) {
+    scene.remove(skeletonHelper); skeletonHelper = null;
+    $('skelbtn').textContent = 'show skeleton';
+  } else {
+    skeletonHelper = new THREE.SkeletonHelper(current);
+    skeletonHelper.material.linewidth = 2;
+    scene.add(skeletonHelper);
+    $('skelbtn').textContent = 'hide skeleton';
+  }
+});
+
+$('wirebtn').addEventListener('click', () => {
+  if (!current) return;
+  wireframe = !wireframe;
+  current.traverse((o) => {
+    if (o.isMesh) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => { m.wireframe = wireframe; });
+    }
+  });
+  $('wirebtn').textContent = wireframe ? 'solid' : 'wireframe';
+});
+
+$('framebtn').addEventListener('click', () => { if (current) frameModel(current); });
+
+// drag & drop
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((ev) =>
+  window.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('on'); }));
+['dragleave', 'drop'].forEach((ev) =>
+  window.addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'drop' || e.target === document.documentElement) drop.classList.remove('on'); }));
+window.addEventListener('drop', (e) => {
+  e.preventDefault(); drop.classList.remove('on');
+  const f = e.dataTransfer.files[0];
+  if (f && /\.(glb|gltf)$/i.test(f.name)) loadFile(f);
+});
+
+// ?url= to auto-load (e.g. a Ready Player Me url or local path),
+// otherwise load the bundled sample rig so the harness is verified on open.
+const qp = new URLSearchParams(location.search).get('url');
+if (qp) loadURL(qp, qp.split('/').pop());
+else loadURL('../files/assets/298976988/1/soldier2.glb', 'soldier2.glb (sample rig)');
+
+// ---- render loop ------------------------------------------------------
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = clock.getDelta();
+  if (mixer && playing) mixer.update(dt);
+  controls.update();
+  renderer.render(scene, camera);
+}
+tick();
+</script>
+</body>
+</html>
