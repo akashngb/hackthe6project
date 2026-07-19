@@ -1239,6 +1239,8 @@
 
   // gta6-adapter.ts
   var pc = globalThis.pc;
+  var BUILD_TAG = "v10-clearance";
+  console.log("[walk-collision] build", BUILD_TAG);
   var MOVE_SPEED = 4;
   var RUN_MULTIPLIER = 2;
   var LOOK_SENSITIVITY = 0.15;
@@ -1528,6 +1530,10 @@
       __publicField(this, "npcRadius", NPC_RADIUS);
       __publicField(this, "walkSpeedMul", 1);
       __publicField(this, "combatEnabled", false);
+      /** true while a scene switch is in flight — freezes all NPC activity */
+      __publicField(this, "suspended", false);
+      /** per-scene pinned soldier floor band [minY, maxY]; null = player-relative */
+      __publicField(this, "floorRange", null);
       /** authoritative player position (walk controller state); falls back to
        *  the camera entity, which lags one frame behind teleports */
       __publicField(this, "getPlayerPos", null);
@@ -1539,6 +1545,7 @@
       __publicField(this, "_desiredCount", 0);
       __publicField(this, "_push", { x: 0, y: 0, z: 0 });
       __publicField(this, "_screenPos");
+      __publicField(this, "_refillT", 0);
       this.app = app;
       this.collision = collision;
       this.cameraEntity = cameraEntity;
@@ -1577,27 +1584,37 @@
         this.app.assets.load(asset);
       }
     }
+    /**
+     * Measure the model by walking its node/bone hierarchy in world space.
+     * Skinned-mesh AABBs are only refreshed when the model is actually
+     * rendered, so off-screen soldiers report garbage bounds (which once
+     * collapsed the auto-scale to zero); bone transforms always update.
+     */
     _measureModel(model) {
-      let min = null, max = null;
-      const rs = model.findComponents("render");
-      for (const r of rs) {
-        for (const mi of r.meshInstances) {
-          const mn = mi.aabb.getMin(), mx = mi.aabb.getMax();
-          if (!min) {
-            min = { x: mn.x, y: mn.y, z: mn.z };
-            max = { x: mx.x, y: mx.y, z: mx.z };
-          } else {
-            min.x = Math.min(min.x, mn.x);
-            min.y = Math.min(min.y, mn.y);
-            min.z = Math.min(min.z, mn.z);
-            max.x = Math.max(max.x, mx.x);
-            max.y = Math.max(max.y, mx.y);
-            max.z = Math.max(max.z, mx.z);
-          }
+      const collect = (rigOnly) => {
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        let count = 0;
+        const stack = [model];
+        while (stack.length) {
+          const n = stack.pop();
+          const ch = n.children;
+          for (let i = 0; i < ch.length; i++) stack.push(ch[i]);
+          if (rigOnly && (!n.name || n.name.indexOf("mixamorig") === -1)) continue;
+          const p = n.getPosition();
+          if (!isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z)) continue;
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.z < minZ) minZ = p.z;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+          if (p.z > maxZ) maxZ = p.z;
+          count++;
         }
-      }
-      if (!min) return null;
-      return { minY: min.y, ext: { x: max.x - min.x, y: max.y - min.y, z: max.z - min.z } };
+        if (count < 3) return null;
+        return { minY, ext: { x: maxX - minX, y: maxY - minY, z: maxZ - minZ } };
+      };
+      return collect(true) || collect(false);
     }
     _track(key) {
       const c = this.assets[key];
@@ -1611,20 +1628,25 @@
       const gMaxX = col.gridMinX + col.numVoxelsX * res;
       const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
       const clearances = [];
-      for (let i = 0; i < 60 && clearances.length < 25; i++) {
+      for (let i = 0; i < 200 && clearances.length < 25; i++) {
         const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
         const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
         const down = col.queryRay(x, midY, z, 0, -1, 0, 30);
         const up = col.queryRay(x, midY, z, 0, 1, 0, 30);
-        if (down && up) clearances.push(up.y - down.y);
+        if (!down || !up) continue;
+        const c = up.y - down.y;
+        if (c > 0.8) clearances.push(c);
       }
+      this.npcHeight = NPC_HEIGHT;
       if (clearances.length >= 5) {
         clearances.sort((a, b) => a - b);
         const median = clearances[Math.floor(clearances.length / 2)];
-        this.npcHeight = Math.min(1.65, median * 0.85);
-        this.npcRadius = this.npcHeight * 0.18;
+        this.npcHeight = Math.min(NPC_HEIGHT, Math.max(0.9, median * 0.85));
         console.log("npcSystem: corridor clearance", median.toFixed(2), "\u2192 soldier height", this.npcHeight.toFixed(2));
+      } else {
+        console.warn("npcSystem: too few clearance samples \u2014 using default height", NPC_HEIGHT);
       }
+      this.npcRadius = this.npcHeight * 0.18;
     }
     _onAssetsReady() {
       try {
@@ -1677,28 +1699,26 @@
       const pp = this._playerPos();
       const playerFloor = pp.y - 1.5;
       const probeY = pp.y + 0.6;
-      const tryOnce = (strict) => {
-        for (let attempt = 0; attempt < (strict ? 120 : 80); attempt++) {
-          const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
-          const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
-          if (strict) {
-            const ddx = x - pp.x, ddz = z - pp.z;
-            const dd = Math.sqrt(ddx * ddx + ddz * ddz);
-            if (dd < 4 || dd > 28) continue;
-          }
-          const fromY = strict ? probeY : col.gridMinY + col.numVoxelsY * res * 0.5;
-          const down = col.queryRay(x, fromY, z, 0, -1, 0, 20);
-          if (!down) continue;
-          const floor = down.y;
-          if (strict && Math.abs(floor - playerFloor) > 1.2) continue;
-          const up = col.queryRay(x, floor + 0.2, z, 0, 1, 0, 20);
-          if (up && up.y - floor < this.npcHeight + 0.1) continue;
-          if (!col.isFreeAt(x, floor + 0.9, z)) continue;
-          return { x, y: floor, z };
+      for (let attempt = 0; attempt < 250; attempt++) {
+        const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
+        const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
+        const ddx = x - pp.x, ddz = z - pp.z;
+        const dd = Math.sqrt(ddx * ddx + ddz * ddz);
+        if (dd < 4 || dd > 28) continue;
+        const down = col.queryRay(x, probeY, z, 0, -1, 0, 20);
+        if (!down) continue;
+        const floor = down.y;
+        if (this.floorRange) {
+          if (floor < this.floorRange[0] - 0.05 || floor > this.floorRange[1] + 0.05) continue;
+        } else if (Math.abs(floor - playerFloor) > 1.2) {
+          continue;
         }
-        return null;
-      };
-      return tryOnce(true) || tryOnce(false);
+        const up = col.queryRay(x, floor + 0.2, z, 0, 1, 0, 20);
+        if (up && up.y - floor < this.npcHeight + 0.1) continue;
+        if (!col.isFreeAt(x, floor + 0.9, z)) continue;
+        return { x, y: floor, z };
+      }
+      return null;
     }
     _spawnNpc(seed) {
       const spot = this._randomFloorSpot();
@@ -1707,6 +1727,9 @@
       const model = this.assets.model.resource.instantiateRenderEntity();
       root.addChild(model);
       this.app.root.addChild(root);
+      for (const r of model.findComponents("render")) {
+        for (const mi of r.meshInstances) mi.cull = false;
+      }
       model.setLocalEulerAngles(0, 180, 0);
       model.addComponent("anim", { activate: true });
       const idle = this._track("idle");
@@ -1799,18 +1822,25 @@
       }
       this._syncTag(npc);
     }
-    /** line of sight from npc chest to the player eye (voxel raycast + hearing) */
-    _hasLineOfSight(npc) {
+    /** pure raycast line of sight from npc chest to the player eye */
+    _clearShot(npc) {
       const pp = this._playerPos();
       const fx = npc.p.x, fy = npc.p.y + this.npcHeight * 0.75, fz = npc.p.z;
       const dx = pp.x - fx, dy = pp.y - fy, dz = pp.z - fz;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (dist < NPC_HEARING_RANGE) return true;
       if (dist > NPC_SIGHT_RANGE * 1.2) return false;
+      if (dist < 0.5) return true;
       const hit = this.collision.queryRay(fx, fy, fz, dx / dist, dy / dist, dz / dist, dist);
       if (!hit) return true;
       const hx = hit.x - fx, hy = hit.y - fy, hz = hit.z - fz;
       return Math.sqrt(hx * hx + hy * hy + hz * hz) > dist * 0.92;
+    }
+    /** awareness: clear shot OR point-blank hearing (walls don't block ears) */
+    _hasLineOfSight(npc) {
+      if (this._clearShot(npc)) return true;
+      const pp = this._playerPos();
+      const dx = pp.x - npc.p.x, dy = pp.y - (npc.p.y + this.npcHeight * 0.75), dz = pp.z - npc.p.z;
+      return Math.sqrt(dx * dx + dy * dy + dz * dz) < NPC_HEARING_RANGE;
     }
     /** nearest live npc intersected by the ray (vertical-capsule approximation) */
     raycastNpcs(ox, oy, oz, dx, dy, dz, maxDist) {
@@ -1912,14 +1942,21 @@
         }
       } else if (fit.phase === "scale") {
         const cur = npc.model.getLocalScale().x;
-        const scale = cur * (this.npcHeight / m.ext.y);
+        let scale = cur * (this.npcHeight * 0.93 / m.ext.y);
+        if (!isFinite(scale) || scale < 5e-4 || scale > 1) {
+          console.warn("npcSystem: implausible scale", scale, "span", m.ext.y.toFixed(2), "\u2014 using fallback");
+          scale = this.npcHeight / 180;
+        }
         npc.model.setLocalScale(scale, scale, scale);
-        console.log("npcSystem: model height", m.ext.y.toFixed(2), "\u2192 scale", scale.toFixed(4));
+        console.log("npcSystem: bone span", m.ext.y.toFixed(2), "\u2192 scale", scale.toFixed(4));
         fit.phase = "ground";
         fit.wait = 2;
       } else if (fit.phase === "ground") {
-        const lp = npc.model.getLocalPosition();
-        npc.model.setLocalPosition(lp.x, lp.y + (npc.p.y - m.minY), lp.z);
+        const dy = npc.p.y - m.minY;
+        if (isFinite(dy) && Math.abs(dy) < 50) {
+          const lp = npc.model.getLocalPosition();
+          npc.model.setLocalPosition(lp.x, lp.y + dy, lp.z);
+        }
         npc.fit = null;
         this._attachWeapon(npc);
       }
@@ -1938,6 +1975,9 @@
           return;
         }
         const gun = this.assets.gun.resource.instantiateRenderEntity();
+        for (const r of gun.findComponents("render")) {
+          for (const mi of r.meshInstances) mi.cull = false;
+        }
         hand.addChild(gun);
         gun.setLocalPosition(GUN_LOCAL_POS[0], GUN_LOCAL_POS[1], GUN_LOCAL_POS[2]);
         gun.setLocalEulerAngles(GUN_LOCAL_EULER[0], GUN_LOCAL_EULER[1], GUN_LOCAL_EULER[2]);
@@ -1945,6 +1985,9 @@
         npc.gun = gun;
         if (this.assets.flash) {
           const flash = this.assets.flash.resource.instantiateRenderEntity();
+          for (const r of flash.findComponents("render")) {
+            for (const mi of r.meshInstances) mi.cull = false;
+          }
           gun.addChild(flash);
           flash.setLocalPosition(FLASH_LOCAL_POS[0], FLASH_LOCAL_POS[1], FLASH_LOCAL_POS[2]);
           flash.setLocalScale(FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE);
@@ -1971,8 +2014,13 @@
       }
     }
     step(dt, balls) {
-      if (!this.ready) return;
+      if (!this.ready || this.suspended) return;
       const col = this.collision;
+      this._refillT -= dt;
+      if (this._refillT <= 0) {
+        this._refillT = 2;
+        if (this.aliveCount() < this._desiredCount) this._fillPopulation();
+      }
       for (const b of balls) this.hitTest(b, dt);
       for (const npc of this.npcs) {
         if (npc.fit && npc.state !== "dead") this._fitStep(npc);
@@ -1992,7 +2040,8 @@
           npc.percT -= dt;
           if (npc.percT <= 0) {
             npc.percT = 0.15;
-            npc.canSee = this._hasLineOfSight(npc);
+            npc.clearShot = this._clearShot(npc);
+            npc.canSee = npc.clearShot || this._hasLineOfSight(npc);
           }
           const pp = this._playerPos();
           const pdx = pp.x - npc.p.x, pdz = pp.z - npc.p.z;
@@ -2064,7 +2113,7 @@
             this._setAnim(npc, "Idle");
           }
           npc.shootT -= dt;
-          if (npc.shootT <= 0 && Math.abs(dyaw) < 15 && npc.reloadT <= 0 && dist <= NPC_FIRE_RANGE) {
+          if (npc.shootT <= 0 && Math.abs(dyaw) < 15 && npc.reloadT <= 0 && dist <= NPC_FIRE_RANGE && npc.clearShot) {
             npc.shootT = 0.45 + Math.random() * 0.4 * (1 + npc.pers.randomness);
             npc.bullets--;
             if (npc.bullets <= 0) npc.reloadT = NPC_RELOAD_TIME;
@@ -2685,13 +2734,15 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
       const cs = [];
       const floors = [];
-      for (let i = 0; i < 80 && cs.length < 30; i++) {
+      for (let i = 0; i < 200 && cs.length < 30; i++) {
         const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
         const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
         const down = col.queryRay(x, midY, z, 0, -1, 0, 30);
         const up = col.queryRay(x, midY, z, 0, 1, 0, 30);
-        if (down && up) {
-          cs.push(up.y - down.y);
+        if (!down || !up) continue;
+        const c = up.y - down.y;
+        if (c > 0.8) {
+          cs.push(c);
           floors.push(down.y);
         }
       }
@@ -3064,6 +3115,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       __publicField(this, "script");
       __publicField(this, "current", 0);
       __publicField(this, "_busy", false);
+      __publicField(this, "_queued", null);
       __publicField(this, "_select", null);
       __publicField(this, "_portals", []);
       __publicField(this, "_screenPos", null);
@@ -3216,11 +3268,20 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       }
     }
     async switchTo(i, spawnAt = null) {
-      if (this._busy || i === this.current) return;
+      if (this._busy) {
+        this._queued = { i, spawnAt };
+        return;
+      }
+      if (i === this.current) return;
       this._busy = true;
       const scene = SCENES[i];
       const s = this.script;
       try {
+        if (s._npcs) {
+          s._npcs.suspended = true;
+          s._npcs.reset();
+          s._npcs.floorRange = scene.npcFloorY || null;
+        }
         if (s._director) s._director._showBanner(`TELEPORTING \u2192 ${scene.name.toUpperCase()}\u2026`, 3);
         const v2 = await this._loadVoxel(scene);
         this._applyCollision(v2.meta, v2.nodes, v2.leafData);
@@ -3268,11 +3329,12 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         if (d2 && (d2.state === "playing" || d2.state === "intermission")) {
           if (scene.noSoldiers) {
             d2.state = "playing";
+            d2._waveDelay = 0;
             if (s._npcs) s._npcs.setPopulation(0);
           } else {
             d2.wave = 0;
             d2.state = "playing";
-            d2._nextWave();
+            d2._waveDelay = 0.6;
           }
         }
         this._buildPortals(scene);
@@ -3282,9 +3344,15 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       } catch (e) {
         console.error("sceneManager switch failed", e);
       }
+      if (s._npcs) s._npcs.suspended = false;
       this._busy = false;
       const canvas = this.app.graphicsDevice.canvas;
       if (canvas) canvas.requestPointerLock();
+      if (this._queued) {
+        const q = this._queued;
+        this._queued = null;
+        if (q.i !== this.current) this.switchTo(q.i, q.spawnAt);
+      }
     }
   };
   var THEME_BG = "#0d1117";
@@ -3304,6 +3372,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       __publicField(this, "hp", PLAYER_MAX_HP);
       __publicField(this, "_regenT", 0);
       __publicField(this, "_interT", 0);
+      __publicField(this, "_waveDelay", 0);
       __publicField(this, "npcs");
       __publicField(this, "sceneMgr", null);
       __publicField(this, "sounds", null);
@@ -3476,6 +3545,10 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._hpFill.style.width = `${this.hp / PLAYER_MAX_HP * 100}%`;
     }
     update(dt) {
+      if (this._waveDelay > 0 && this.state === "playing") {
+        this._waveDelay -= dt;
+        if (this._waveDelay <= 0) this._nextWave();
+      }
       if (this.state === "playing") {
         if (this._regenT > 0) {
           this._regenT -= dt;
@@ -3484,7 +3557,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           this._syncHud();
         }
         const scNow = this.sceneMgr ? SCENES[this.sceneMgr.current] : null;
-        if (!(scNow && scNow.noSoldiers) && this.npcs.ready && this.npcs.npcs.length > 0 && this.npcs.aliveCount() === 0) {
+        if (this._waveDelay <= 0 && !(scNow && scNow.noSoldiers) && this.npcs.ready && this.npcs.npcs.length > 0 && this.npcs.aliveCount() === 0) {
           this.state = "intermission";
           this._interT = WAVE_INTERMISSION;
           this._showBanner(`WAVE ${this.wave} CLEARED`, WAVE_INTERMISSION);
@@ -3835,7 +3908,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     if (this._coordT > 0.1 && this._coordBox && typeof this.entity.getPosition === "function") {
       this._coordT = 0;
       const cp = this.entity.getPosition();
-      this._coordBox.textContent = `x ${cp.x.toFixed(2)}  y ${cp.y.toFixed(2)}  z ${cp.z.toFixed(2)}`;
+      const sceneName = this._scenes ? SCENES[this._scenes.current].name : "?";
+      this._coordBox.textContent = `\u{1F4CD} ${sceneName} \xB7 x ${cp.x.toFixed(2)}  y ${cp.y.toFixed(2)}  z ${cp.z.toFixed(2)}`;
     }
     if (this._balls) this._balls.step(Math.min(dt, 0.05));
     if (this._npcs) this._npcs.step(Math.min(dt, 0.05), this._balls ? this._balls.balls : []);
