@@ -3,7 +3,7 @@
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // pc-shim.js
+  // ../../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/pc-shim.js
   var _pc = globalThis.pc;
   var math = _pc.math;
   var Vec3 = _pc.Vec3;
@@ -13,7 +13,7 @@
   var INDEXFORMAT_UINT32 = _pc.INDEXFORMAT_UINT32;
   var SEMANTIC_POSITION = _pc.SEMANTIC_POSITION;
 
-  // vendor/core/math.ts
+  // ../../../../../gta6/src/core/math.ts
   var damp = (damping, dt) => 1 - Math.pow(damping, dt * 1e3);
   var mod = (n, m) => (n % m + m) % m;
   var vecToAngles = (result, vec) => {
@@ -25,7 +25,7 @@
     return result;
   };
 
-  // vendor/cameras/camera-utils.ts
+  // ../../../../../gta6/src/cameras/camera-utils.ts
   var DEFAULT_CONTROLLER_DAMPING = 0.95;
   var rotation = new Quat();
   var applyFrameRotation = (angles, rotate, minPitch = -90, maxPitch = 90) => {
@@ -63,7 +63,7 @@
     return angles;
   };
 
-  // vendor/cameras/spawn-state.ts
+  // ../../../../../gta6/src/cameras/spawn-state.ts
   var SpawnState = class {
     constructor() {
       __publicField(this, "_position", new Vec3());
@@ -116,7 +116,7 @@
     }
   };
 
-  // vendor/collision/find-spawn.ts
+  // ../../../../../gta6/src/collision/find-spawn.ts
   var SEARCH_RADIUS = 5;
   var SEARCH_RADIUS_SQ = SEARCH_RADIUS * SEARCH_RADIUS;
   var RAY_MAX_DIST = 1e3;
@@ -178,7 +178,7 @@
     return found;
   };
 
-  // vendor/cameras/walk-controller.ts
+  // ../../../../../gta6/src/cameras/walk-controller.ts
   var FIXED_DT = 1 / 60;
   var MAX_SUBSTEPS = 10;
   var out = { x: 0, y: 0, z: 0 };
@@ -471,7 +471,7 @@
     }
   };
 
-  // vendor/cameras/camera.ts
+  // ../../../../../gta6/src/cameras/camera.ts
   var rotation2 = new Quat();
   var avec = new Vec3();
   var bvec = new Vec3();
@@ -511,7 +511,7 @@
     }
   };
 
-  // vendor/collision/collision.ts
+  // ../../../../../gta6/src/collision/collision.ts
   var PENETRATION_EPSILON = 1e-4;
   var MAX_RESOLVE_ITERATIONS = 4;
   function resolveIterative(cx, cy, cz, findPenetration, constraintNormals, scratch, out2) {
@@ -564,7 +564,7 @@
     return hasSignificantPush;
   }
 
-  // vendor/collision/voxel-collision.ts
+  // ../../../../../gta6/src/collision/voxel-collision.ts
   var SOLID_LEAF_MARKER = 4278190080 >>> 0;
   var FLAT_R = 2;
   var INV_SQRT2 = 1 / Math.sqrt(2);
@@ -1237,9 +1237,9 @@
     }
   };
 
-  // gta6-adapter.ts
+  // ../../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/gta6-adapter.ts
   var pc = globalThis.pc;
-  var BUILD_TAG = "v10-clearance";
+  var BUILD_TAG = "v11-shadcn";
   console.log("[walk-collision] build", BUILD_TAG);
   var MOVE_SPEED = 4;
   var RUN_MULTIPLIER = 2;
@@ -1783,7 +1783,7 @@
       root.setPosition(spot.x, spot.y, spot.z);
       const el = document.createElement("div");
       el.className = "sg sg-mono";
-      el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;color:var(--fs-red);background:rgba(11,14,12,0.82);border:1px solid rgba(255,77,61,0.5);font-size:10px;letter-spacing:2px;padding:1px 6px;border-radius:0;pointer-events:none;white-space:nowrap;";
+      el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:#f87171;border:1px solid rgba(239,68,68,0.4);letter-spacing:1px;";
       document.body.appendChild(el);
       const pers = NPC_PERSONALITIES[Math.floor(Math.random() * NPC_PERSONALITIES.length)];
       const npc = {
@@ -2351,8 +2351,8 @@
     _updateAmmo() {
       if (!this._ammoDiv) return;
       const pct = Math.max(0, Math.min(100, this.ammo / VM_MAG_SIZE * 100));
-      const label = this.reloading ? '<span style="color:var(--fs-acid)">CYCLING\u2026</span>' : `<b style="color:var(--fs-text);font-size:14px">${String(this.ammo).padStart(2, "0")}</b><span style="color:var(--fs-dim)">/${VM_MAG_SIZE}</span>`;
-      this._ammoDiv.innerHTML = `<div class="sg-h" style="font-size:9px;color:var(--fs-dim);display:flex;justify-content:space-between;gap:14px;margin-bottom:5px"><span>MAG</span><span>${label}</span></div><div class="fs-mag"><div class="fs-mag-fill" style="width:calc(${pct}% - 4px);${this.reloading ? "opacity:0.25" : ""}"></div></div>`;
+      const label = this.reloading ? '<span style="color:var(--muted-fg)">Reloading\u2026</span>' : `<b style="color:var(--foreground);font-size:16px;font-weight:600">${this.ammo}</b><span style="color:var(--muted-fg)"> / ${VM_MAG_SIZE}</span>`;
+      this._ammoDiv.innerHTML = `<div style="font-size:11px;font-weight:500;color:var(--muted-fg);display:flex;justify-content:space-between;align-items:baseline;gap:18px;margin-bottom:6px"><span>Ammo</span><span class="sg-mono">${label}</span></div><div class="sg-progress" style="width:132px"><div style="width:${pct}%;${this.reloading ? "opacity:0.25" : ""}"></div></div>`;
     }
     play(name) {
       const c = VM_CLIPS[name];
@@ -2646,7 +2646,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       marker.sphere = sphere;
       const el = document.createElement("div");
       el.className = "sg sg-mono";
-      el.style.cssText = "position:fixed;transform:translate(-50%,-140%);z-index:9998;color:var(--fs-text);background:rgba(11,14,12,0.85);border:1px solid var(--fs-hair);font-size:9px;letter-spacing:2px;text-transform:uppercase;padding:2px 7px;border-radius:0;pointer-events:none;white-space:nowrap;";
+      el.style.cssText = "position:fixed;transform:translate(-50%,-140%);z-index:9998;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:var(--foreground);border:1px solid var(--border);";
       el.textContent = marker.label;
       document.body.appendChild(el);
       marker.el = el;
@@ -3177,13 +3177,13 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       const sb = document.createElement("div");
       sb.id = "sg-sidebar";
       sb.className = "sg sg-panel hidden";
-      sb.innerHTML = "<h3>\u259A SECTORS <span>[M] close</span></h3>";
+      sb.innerHTML = "<h3>Locations <span>M to close</span></h3>";
       const wrap = document.createElement("div");
       wrap.id = "sg-cards";
       sb.appendChild(wrap);
       const dz = document.createElement("div");
       dz.id = "sg-dropzone";
-      dz.innerHTML = '\u21E3 ingest scan .zip<br><span style="font-size:8px;opacity:0.7">.sog + voxel data \u2192 new sector</span>';
+      dz.innerHTML = '<span style="color:var(--foreground);font-weight:500">Drop a scan .zip</span><br><span style="font-size:10px">.sog + voxel data becomes a new location</span>';
       dz.addEventListener("click", () => {
         const inp = document.createElement("input");
         inp.type = "file";
@@ -3232,10 +3232,10 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         const initials = s.name.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 3);
         card.innerHTML = `<div class="sg-thumb-ph">${initials}</div>`;
       }
-      const chip = s.gsplatAsset ? '<span class="sg-chip drop">FIELD</span>' : s.noSoldiers ? '<span class="sg-chip safe">SAFE</span>' : '<span class="sg-chip combat">HOSTILE</span>';
+      const chip = s.gsplatAsset ? '<span class="sg-chip drop">Imported</span>' : s.noSoldiers ? '<span class="sg-chip safe">Safe</span>' : '<span class="sg-chip combat">Combat</span>';
       const row = document.createElement("div");
       row.className = "sg-card-row";
-      row.innerHTML = `<span><span style="color:var(--fs-dim)">${String(i + 1).padStart(2, "0")}&nbsp;</span>${s.name}</span>${chip}`;
+      row.innerHTML = `<span><span style="color:var(--muted-fg)" class="sg-mono">${String(i + 1).padStart(2, "0")}&nbsp;&nbsp;</span>${s.name}</span>${chip}`;
       card.appendChild(row);
       card.addEventListener("click", () => {
         this.toggleSidebar(false);
@@ -3406,7 +3406,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         }
         const el = document.createElement("div");
         el.className = "sg sg-mono";
-        el.style.cssText = "position:fixed;transform:translate(-50%,-120%);z-index:9998;color:var(--fs-acid);background:rgba(11,14,12,0.85);border:1px solid var(--fs-line);font-size:9px;font-weight:600;letter-spacing:3px;text-transform:uppercase;padding:3px 9px;border-radius:0;pointer-events:none;white-space:nowrap;";
+        el.style.cssText = "position:fixed;transform:translate(-50%,-120%);z-index:9998;font-family:var(--font);font-size:11px;font-weight:600;padding:3px 12px;border-radius:9999px;background:var(--primary);color:var(--primary-fg);pointer-events:none;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.5);";
         el.textContent = "\u2316 " + (cfg.label || "portal").replace("\u2192 ", "");
         document.body.appendChild(el);
         this._portals.push({ cfg, ent, el, armed: false });
@@ -3541,53 +3541,45 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     }
   };
   var UI_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Archivo+Black&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 :root{
-  --fs-ink:#0b0e0c; --fs-panel:rgba(11,14,12,0.92); --fs-line:rgba(216,255,62,0.28);
-  --fs-hair:rgba(235,240,225,0.14); --fs-acid:#d8ff3e; --fs-red:#ff4d3d; --fs-cyan:#59d6e6;
-  --fs-green:#7ee08a; --fs-text:#ebf0e1; --fs-dim:#8b937f;
-  --fs-mono:'IBM Plex Mono','Courier New',monospace;
-  --fs-disp:'Archivo Black','Arial Black',sans-serif;
+  --background:#09090b; --foreground:#fafafa;
+  --card:rgba(9,9,11,0.92); --border:#27272a; --input:#27272a;
+  --muted:#27272a; --muted-fg:#a1a1aa;
+  --primary:#fafafa; --primary-fg:#18181b;
+  --destructive:#ef4444; --ring:#d4d4d8;
+  --ok:#34d399; --info:#60a5fa; --warn:#fbbf24;
+  --radius:8px; --radius-md:6px; --radius-sm:4px;
+  --font:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
 }
-.sg{font-family:var(--fs-mono);color:var(--fs-text);}
-.sg-mono{font-family:var(--fs-mono);}
-.sg-h{text-transform:uppercase;letter-spacing:3px;font-weight:600;}
-.sg-panel{position:relative;background:var(--fs-panel);border:1px solid var(--fs-hair);border-radius:0;
-  background-image:repeating-linear-gradient(0deg,transparent 0 11px,rgba(235,240,225,0.02) 11px 12px),repeating-linear-gradient(90deg,transparent 0 11px,rgba(235,240,225,0.02) 11px 12px);}
-.sg-panel::before,.sg-panel::after{content:'';position:absolute;width:10px;height:10px;pointer-events:none;}
-.sg-panel::before{top:-1px;left:-1px;border-top:2px solid var(--fs-acid);border-left:2px solid var(--fs-acid);}
-.sg-panel::after{bottom:-1px;right:-1px;border-bottom:2px solid var(--fs-acid);border-right:2px solid var(--fs-acid);}
-.sg-chip{display:inline-block;padding:0 2px;border-radius:0;font-size:9px;letter-spacing:1px;font-weight:600;font-family:var(--fs-mono);}
-.sg-chip::before{content:'[ ';opacity:0.6;} .sg-chip::after{content:' ]';opacity:0.6;}
-.sg-chip.safe{color:var(--fs-green);} .sg-chip.combat{color:var(--fs-red);} .sg-chip.drop{color:var(--fs-cyan);}
-@keyframes fs-sweep{0%{background-position:-200% 0;}100%{background-position:300% 0;}}
-.fs-sweep{background-image:linear-gradient(100deg,transparent 30%,rgba(216,255,62,0.13) 50%,transparent 70%) !important;background-size:250% 100% !important;animation:fs-sweep 1.6s linear infinite;}
-@keyframes fs-blink{0%,55%{opacity:1}56%,100%{opacity:0}}
-.fs-cursor{display:inline-block;width:7px;height:11px;background:var(--fs-acid);margin-left:5px;animation:fs-blink 1.1s steps(1) infinite;vertical-align:baseline;}
-.fs-rule{height:1px;background:repeating-linear-gradient(90deg,var(--fs-line) 0 6px,transparent 6px 10px);}
-#sg-sidebar{position:fixed;top:16px;right:16px;bottom:16px;width:252px;z-index:10007;display:flex;flex-direction:column;padding:14px;gap:10px;overflow:hidden;transition:transform 0.18s ease,opacity 0.18s ease;}
-#sg-sidebar.hidden{transform:translateX(290px);opacity:0;pointer-events:none;}
-#sg-sidebar h3{margin:0;font-size:10px;letter-spacing:4px;color:var(--fs-acid);font-weight:600;display:flex;justify-content:space-between;align-items:baseline;text-transform:uppercase;}
-#sg-sidebar h3 span{color:var(--fs-dim);font-weight:400;letter-spacing:1px;font-size:9px;}
-#sg-cards{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:9px;padding-right:2px;}
-#sg-cards::-webkit-scrollbar{width:3px;} #sg-cards::-webkit-scrollbar-thumb{background:var(--fs-line);}
-.sg-card{border:1px solid var(--fs-hair);border-radius:0;overflow:hidden;cursor:pointer;background:rgba(255,255,255,0.02);transition:border-color 0.12s;flex-shrink:0;position:relative;}
-.sg-card:hover{border-color:var(--fs-dim);}
-.sg-card.active{border-color:var(--fs-acid);}
-.sg-card.active .sg-card-row::before{content:'\u25B8 ';color:var(--fs-acid);}
-.sg-thumb{width:100%;height:90px;object-fit:cover;display:block;background:#0d100e;filter:saturate(0.8) contrast(1.05);}
-.sg-thumb-ph{width:100%;height:90px;display:flex;align-items:center;justify-content:center;font-size:18px;letter-spacing:6px;color:var(--fs-dim);font-family:var(--fs-mono);background:repeating-linear-gradient(-45deg,#0b0e0c,#0b0e0c 5px,#0e120f 5px,#0e120f 10px);}
-.sg-card-row{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;font-family:var(--fs-mono);}
-#sg-dropzone,#sg-requisition{border:1px dashed var(--fs-line);border-radius:0;padding:11px 10px;text-align:center;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--fs-dim);cursor:pointer;transition:border-color 0.12s,color 0.12s;flex-shrink:0;font-family:var(--fs-mono);}
-#sg-dropzone:hover,#sg-dropzone.over,#sg-requisition:hover{border-color:var(--fs-acid);color:var(--fs-acid);}
-.fs-reticle{position:fixed;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;z-index:9998;pointer-events:none;}
-.fs-reticle::before,.fs-reticle::after{content:'';position:absolute;background:rgba(235,240,225,0.85);}
-.fs-reticle::before{left:50%;top:0;width:1px;height:100%;margin-left:-0.5px;
-  -webkit-mask:linear-gradient(0deg,#000 0 5px,transparent 5px calc(100% - 5px),#000 calc(100% - 5px));mask:linear-gradient(0deg,#000 0 5px,transparent 5px calc(100% - 5px),#000 calc(100% - 5px));}
-.fs-reticle::after{top:50%;left:0;height:1px;width:100%;margin-top:-0.5px;
-  -webkit-mask:linear-gradient(90deg,#000 0 5px,transparent 5px calc(100% - 5px),#000 calc(100% - 5px));mask:linear-gradient(90deg,#000 0 5px,transparent 5px calc(100% - 5px),#000 calc(100% - 5px));}
-.fs-mag{width:168px;height:16px;border:1px solid var(--fs-hair);position:relative;background:rgba(255,255,255,0.03);}
-.fs-mag-fill{position:absolute;inset:2px auto 2px 2px;background:repeating-linear-gradient(90deg,var(--fs-acid) 0 3px,transparent 3px 5.53px);transition:width 0.1s;}
+.sg{font-family:var(--font);color:var(--foreground);font-feature-settings:'tnum';}
+.sg-mono{font-family:var(--font);font-variant-numeric:tabular-nums;}
+.sg-h{font-weight:600;letter-spacing:-0.01em;}
+.sg-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 1px 2px rgba(0,0,0,0.4);}
+.sg-chip{display:inline-flex;align-items:center;padding:1px 8px;border-radius:9999px;font-size:10px;font-weight:600;border:1px solid var(--border);background:transparent;}
+.sg-chip.safe{color:var(--ok);border-color:rgba(52,211,153,0.35);}
+.sg-chip.combat{color:var(--destructive);border-color:rgba(239,68,68,0.35);}
+.sg-chip.drop{color:var(--info);border-color:rgba(96,165,250,0.35);}
+.sg-btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 18px;border-radius:var(--radius-md);background:var(--primary);color:var(--primary-fg);font-size:13px;font-weight:600;border:none;cursor:pointer;transition:opacity 0.15s;}
+.sg-btn:hover{opacity:0.9;}
+.sg-sep{height:1px;background:var(--border);}
+#sg-sidebar{position:fixed;top:16px;right:16px;bottom:16px;width:256px;z-index:10007;display:flex;flex-direction:column;padding:16px;gap:12px;overflow:hidden;transition:transform 0.2s ease,opacity 0.2s ease;}
+#sg-sidebar.hidden{transform:translateX(300px);opacity:0;pointer-events:none;}
+#sg-sidebar h3{margin:0;font-size:13px;font-weight:600;letter-spacing:-0.01em;color:var(--foreground);display:flex;justify-content:space-between;align-items:baseline;}
+#sg-sidebar h3 span{color:var(--muted-fg);font-weight:400;font-size:11px;}
+#sg-cards{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:2px;}
+#sg-cards::-webkit-scrollbar{width:4px;} #sg-cards::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.sg-card{border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;cursor:pointer;background:rgba(255,255,255,0.02);transition:border-color 0.15s,box-shadow 0.15s;flex-shrink:0;}
+.sg-card:hover{border-color:#3f3f46;}
+.sg-card.active{border-color:var(--ring);box-shadow:0 0 0 1px var(--ring);}
+.sg-thumb{width:100%;height:92px;object-fit:cover;display:block;background:#18181b;}
+.sg-thumb-ph{width:100%;height:92px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;letter-spacing:2px;color:#52525b;background:#18181b;}
+.sg-card-row{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;font-size:12px;font-weight:500;}
+#sg-dropzone,#sg-requisition{border:1px dashed #3f3f46;border-radius:var(--radius-md);padding:14px 10px;text-align:center;font-size:11px;color:var(--muted-fg);cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;flex-shrink:0;}
+#sg-dropzone:hover,#sg-dropzone.over,#sg-requisition:hover{border-color:var(--ring);color:var(--foreground);background:rgba(255,255,255,0.03);}
+.fs-reticle{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;z-index:9998;pointer-events:none;border-radius:9999px;background:rgba(250,250,250,0.9);box-shadow:0 0 0 1px rgba(9,9,11,0.6);}
+.sg-progress{height:8px;border-radius:9999px;background:var(--muted);overflow:hidden;}
+.sg-progress>div{height:100%;border-radius:9999px;background:var(--primary);transition:width 0.15s;}
 `;
   function injectUiCss() {
     if (document.getElementById("sg-css")) return;
@@ -3934,7 +3926,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         peer.model = model;
         const el = document.createElement("div");
         el.className = "sg sg-mono";
-        el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;color:var(--fs-cyan);background:rgba(11,14,12,0.82);border:1px solid rgba(89,214,230,0.5);font-size:9px;font-weight:600;letter-spacing:2px;text-transform:uppercase;padding:1px 6px;border-radius:0;pointer-events:none;white-space:nowrap;";
+        el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:var(--info);border:1px solid rgba(96,165,250,0.4);";
         el.textContent = peer.name || "player";
         document.body.appendChild(el);
         peer.el = el;
@@ -4070,7 +4062,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         root.setPosition(spot.x, spot.y, spot.z);
         const el = document.createElement("div");
         el.className = "sg sg-mono";
-        el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;color:var(--fs-green);background:rgba(11,14,12,0.82);border:1px solid rgba(126,224,138,0.45);font-size:9px;font-weight:600;letter-spacing:2px;text-transform:uppercase;padding:1px 6px;border-radius:0;pointer-events:none;white-space:nowrap;";
+        el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:var(--ok);border:1px solid rgba(52,211,153,0.4);";
         el.textContent = cfg.name;
         document.body.appendChild(el);
         this.friends.push({
@@ -4242,7 +4234,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       const card = document.createElement("div");
       card.id = "sg-requisition";
       card.style.cssText = "";
-      card.innerHTML = '\u2316 requisition unit<br><span style="font-size:8px;opacity:0.7">photos of a person \u2192 field unit</span>';
+      card.innerHTML = '<span style="color:var(--foreground);font-weight:500">Create an NPC</span><br><span style="font-size:10px">photos of a person become a unit</span>';
       const status = document.createElement("div");
       status.style.cssText = "font-size:10px;margin-top:6px;color:#93c5fd;display:none;";
       card.appendChild(status);
@@ -4374,21 +4366,22 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         return d2;
       };
       injectUiCss();
-      this._overlay = mk("position:fixed;inset:0;z-index:10005;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(11,14,12,0.93),rgba(5,7,6,0.99));color:var(--fs-text);text-align:center;cursor:pointer;");
+      this._overlay = mk("position:fixed;inset:0;z-index:10005;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(9,9,11,0.94);color:var(--foreground);text-align:center;cursor:pointer;");
       this._overlay.className = "sg";
-      this._banner = mk("position:fixed;top:14%;left:50%;transform:translateX(-50%);z-index:10004;display:none;padding:12px 40px;font-size:13px;font-weight:600;letter-spacing:7px;white-space:nowrap;text-transform:uppercase;");
-      this._banner.className = "sg sg-panel fs-sweep";
+      this._banner = mk("position:fixed;top:14%;left:50%;transform:translateX(-50%);z-index:10004;display:none;padding:12px 28px;font-size:13px;font-weight:600;letter-spacing:0.04em;white-space:nowrap;");
+      this._banner.className = "sg sg-panel";
       this._hud = mk("position:fixed;top:16px;left:16px;z-index:10001;pointer-events:none;padding:10px 16px;min-width:180px;");
       this._hud.className = "sg sg-panel";
-      this._feed = mk("position:fixed;top:104px;left:16px;z-index:10001;pointer-events:none;font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--fs-dim);display:flex;flex-direction:column;gap:2px;");
+      this._feed = mk("position:fixed;top:112px;left:16px;z-index:10001;pointer-events:none;font-family:var(--font);font-size:11px;color:var(--muted-fg);display:flex;flex-direction:column;gap:3px;");
       this._feed.className = "sg sg-mono";
       const hpWrap = mk("position:fixed;bottom:20px;left:16px;z-index:10001;width:230px;padding:10px 14px;pointer-events:none;");
       hpWrap.className = "sg sg-panel";
-      hpWrap.innerHTML = '<div class="sg-h" style="font-size:9px;color:var(--fs-dim);margin-bottom:5px;display:flex;justify-content:space-between"><span>VITALS</span><span style="color:var(--fs-acid)">\u25AE\u25AE\u25AE</span></div>';
+      hpWrap.innerHTML = '<div style="font-size:11px;font-weight:500;color:var(--muted-fg);margin-bottom:6px;display:flex;justify-content:space-between"><span>Health</span></div>';
       const hpBar = document.createElement("div");
-      hpBar.style.cssText = "height:10px;background:rgba(255,255,255,0.04);overflow:hidden;border:1px solid var(--fs-hair);padding:2px;";
+      hpBar.className = "sg-progress";
+      hpBar.style.cssText = "width:188px;";
       this._hpFill = document.createElement("div");
-      this._hpFill.style.cssText = "height:100%;width:100%;background:repeating-linear-gradient(90deg,var(--fs-acid) 0 6px,rgba(216,255,62,0.35) 6px 7px);transition:width 0.15s;";
+      this._hpFill.style.cssText = "height:100%;width:100%;border-radius:9999px;background:var(--primary);transition:width 0.15s,background 0.15s;";
       hpBar.appendChild(this._hpFill);
       hpWrap.appendChild(hpBar);
       this._vignette = mk("position:fixed;inset:0;z-index:10000;pointer-events:none;background:radial-gradient(ellipse at center, transparent 55%, rgba(200,30,40,0.5) 100%);opacity:0;transition:opacity 0.12s;");
@@ -4436,7 +4429,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     _showTitle() {
       this.state = "title";
       this._overlay.style.display = "flex";
-      this._overlay.innerHTML = '<div class="sg-mono" style="font-size:10px;letter-spacing:3px;color:var(--fs-dim);margin-bottom:18px">43.6596\xB0 N &nbsp;79.3976\xB0 W \u2014 UNIVERSITY OF TORONTO</div><div style="position:relative;padding:18px 46px;border:1px solid var(--fs-line)"><div style="position:absolute;top:-6px;left:-6px;width:14px;height:14px;border-top:2px solid var(--fs-acid);border-left:2px solid var(--fs-acid)"></div><div style="position:absolute;bottom:-6px;right:-6px;width:14px;height:14px;border-bottom:2px solid var(--fs-acid);border-right:2px solid var(--fs-acid)"></div><div style="font-family:var(--fs-disp);font-size:76px;letter-spacing:16px;padding-left:16px;color:var(--fs-text);line-height:1">SIEGE</div></div><div class="sg-h" style="font-size:10px;color:var(--fs-acid);margin:20px 0 42px;letter-spacing:8px">REALITY, SCANNED. NOW DEFEND IT.</div><div class="sg-mono" style="font-size:10px;line-height:2.3;letter-spacing:2px;color:var(--fs-dim);text-transform:uppercase">WASD move &nbsp;&nbsp;LMB fire &nbsp;&nbsp;R reload &nbsp;&nbsp;C crouch &nbsp;&nbsp;SPACE jump<br>M sectors &nbsp;&nbsp;T range &nbsp;&nbsp;X label &nbsp;&nbsp;V erase &nbsp;&nbsp;B voxel view</div><div class="sg-h" style="margin-top:46px;font-size:13px;letter-spacing:6px;color:var(--fs-acid);animation:sgpulse 1.4s infinite">[ CLICK TO CALIBRATE ]</div><div class="sg-mono" style="margin-top:14px;font-size:9px;letter-spacing:2px;color:var(--fs-dim);text-transform:uppercase">drop a scan .zip \u2014 any room becomes a sector</div><style>@keyframes sgpulse{0%,100%{opacity:1}50%{opacity:0.25}}</style>';
+      this._overlay.innerHTML = '<div style="font-size:12px;font-weight:500;color:var(--muted-fg);margin-bottom:16px">University of Toronto \xB7 43.6596\xB0 N, 79.3976\xB0 W</div><div style="font-size:72px;font-weight:700;letter-spacing:-0.03em;line-height:1;color:var(--foreground)">SIEGE</div><div style="font-size:14px;color:var(--muted-fg);margin:16px 0 36px;max-width:420px;line-height:1.6">Reality, scanned. Now defend it \u2014 a wave shooter inside real Gaussian-splat scans of campus.</div><div class="sg-panel" style="padding:14px 22px;font-size:12px;line-height:2.1;color:var(--muted-fg);text-align:left"><span style="color:var(--foreground);font-weight:500">WASD</span> move \xB7 <span style="color:var(--foreground);font-weight:500">Shift</span> run \xB7 <span style="color:var(--foreground);font-weight:500">Space</span> jump \xB7 <span style="color:var(--foreground);font-weight:500">C</span> crouch<br><span style="color:var(--foreground);font-weight:500">LMB</span> fire \xB7 <span style="color:var(--foreground);font-weight:500">R</span> reload \xB7 <span style="color:var(--foreground);font-weight:500">T</span> targets \xB7 <span style="color:var(--foreground);font-weight:500">M</span> locations \xB7 <span style="color:var(--foreground);font-weight:500">B</span> voxels</div><div class="sg-btn" style="margin-top:36px">Click to start</div><div style="margin-top:14px;font-size:11px;color:var(--muted-fg)">Drop a scan .zip anywhere \u2014 any room becomes a level</div>';
     }
     _start() {
       this.state = "playing";
@@ -4514,13 +4507,13 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this.npcs.playerDead = true;
       document.exitPointerLock();
       this._overlay.style.display = "flex";
-      this._overlay.innerHTML = `<div class="sg-mono" style="font-size:10px;letter-spacing:4px;color:var(--fs-red);margin-bottom:14px">// SIGNAL LOST //</div><div style="font-family:var(--fs-disp);font-size:52px;letter-spacing:10px;padding-left:10px;color:var(--fs-red)">ELIMINATED</div><div class="fs-rule" style="width:320px;margin:20px 0 22px"></div><div class="sg-mono" style="font-size:11px;line-height:2.2;letter-spacing:3px;color:var(--fs-dim);text-transform:uppercase">score <b style="color:var(--fs-text)">${this.score}</b> &nbsp;\xB7&nbsp; waves <b style="color:var(--fs-text)">${this.wave}</b> &nbsp;\xB7&nbsp; kills <b style="color:var(--fs-text)">${this.kills}</b></div><div class="sg-h" style="margin-top:40px;font-size:12px;letter-spacing:6px;color:var(--fs-acid);animation:sgpulse 1.4s infinite">[ CLICK TO RECALIBRATE ]</div>`;
+      this._overlay.innerHTML = `<div style="font-size:12px;font-weight:500;color:var(--destructive);margin-bottom:14px">Signal lost</div><div style="font-size:56px;font-weight:700;letter-spacing:-0.03em;color:var(--foreground)">Eliminated</div><div style="font-size:13px;color:var(--muted-fg);margin:22px 0 0" class="sg-mono">Score <b style="color:var(--foreground)">${this.score}</b> &nbsp;\xB7&nbsp; Waves <b style="color:var(--foreground)">${this.wave}</b> &nbsp;\xB7&nbsp; Kills <b style="color:var(--foreground)">${this.kills}</b></div><div class="sg-btn" style="margin-top:36px">Click to restart</div>`;
     }
     _syncHud() {
-      const online = this.online > 1 ? `&nbsp; UNITS:<b style="color:var(--fs-cyan)">${this.online}</b>` : "";
-      const title = this.state === "practice" ? "RANGE MODE" : "SIEGE // FIELD OPS";
-      const stats = this.state === "practice" ? `HITS:<b style="color:var(--fs-text)">${this.practiceHits}</b>&nbsp; SCORE:<b style="color:var(--fs-text)">${this.practiceHits * 50}</b>` : `WAVE:<b style="color:var(--fs-text)">${String(this.wave).padStart(2, "0")}</b>&nbsp; SCORE:<b style="color:var(--fs-text)">${this.score}</b>&nbsp; KILLS:<b style="color:var(--fs-text)">${this.kills}</b>`;
-      this._hud.innerHTML = `<div class="sg-h" style="font-size:10px;color:var(--fs-acid);display:flex;justify-content:space-between;gap:16px"><span>${title}<span class="fs-cursor"></span></span></div><div class="fs-rule" style="margin:6px 0 6px"></div><div style="font-size:10px;letter-spacing:1px;color:var(--fs-dim);text-transform:uppercase">${stats}${online}</div>`;
+      const online = this.online > 1 ? ` &nbsp;\xB7&nbsp; Online <b style="color:var(--info)">${this.online}</b>` : "";
+      const title = this.state === "practice" ? "Target Practice" : "SIEGE";
+      const stats = this.state === "practice" ? `Hits <b style="color:var(--foreground)">${this.practiceHits}</b> &nbsp;\xB7&nbsp; Score <b style="color:var(--foreground)">${this.practiceHits * 50}</b>` : `Wave <b style="color:var(--foreground)">${this.wave}</b> &nbsp;\xB7&nbsp; Score <b style="color:var(--foreground)">${this.score}</b> &nbsp;\xB7&nbsp; Kills <b style="color:var(--foreground)">${this.kills}</b>`;
+      this._hud.innerHTML = `<div class="sg-h" style="font-size:13px;color:var(--foreground)">${title}</div><div class="sg-sep" style="margin:8px 0"></div><div class="sg-mono" style="font-size:12px;color:var(--muted-fg)">${stats}${online}</div>`;
       this._hpFill.style.width = `${this.hp / PLAYER_MAX_HP * 100}%`;
     }
     update(dt) {
@@ -4570,7 +4563,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._coordBox = document.createElement("div");
       this._coordBox.id = "coord-box";
       this._coordBox.className = "sg sg-panel sg-mono";
-      this._coordBox.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10001;font-size:10px;color:var(--sg-muted);padding:5px 16px;letter-spacing:2px;text-transform:uppercase;pointer-events:none;";
+      this._coordBox.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10001;font-size:11px;color:var(--muted-fg);padding:5px 16px;border-radius:9999px;pointer-events:none;";
       document.body.appendChild(this._coordBox);
     }
     this._coordT = 0;
@@ -4934,7 +4927,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       const cp = this.entity.getPosition();
       const si = this._scenes ? this._scenes.current : 0;
       const sceneName = this._scenes ? SCENES[si].name : "?";
-      this._coordBox.innerHTML = `<span style="color:var(--fs-acid)">SEC ${String(si + 1).padStart(2, "0")}</span> ${sceneName} &nbsp;\xB7&nbsp; E${cp.x.toFixed(2)} N${(-cp.z).toFixed(2)} ALT${cp.y.toFixed(2)}`;
+      this._coordBox.innerHTML = `<span style="color:var(--foreground);font-weight:500">${sceneName}</span> &nbsp;\xB7&nbsp; ${cp.x.toFixed(2)}, ${cp.y.toFixed(2)}, ${(-cp.z).toFixed(2)}`;
     }
     if (this._balls) this._balls.step(Math.min(dt, 0.05));
     if (this._npcs) this._npcs.step(Math.min(dt, 0.05), this._balls ? this._balls.balls : []);

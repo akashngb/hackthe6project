@@ -126,10 +126,15 @@ any scan becomes a level.
 
 ## UI
 
-One injected stylesheet (`UI_CSS`): glass panels, single accent, sans+mono
-type. Locations sidebar (M): per-scene preview cards (framebuffer
-screenshots auto-captured on first visit, persisted to localStorage),
-SAFE/COMBAT/IMPORTED chips, active highlight, and the zip drop-zone.
+One injected stylesheet (`UI_CSS`) built on shadcn/ui's design tokens
+(zinc dark palette, Inter, its radius/border/shadow scale) with vanilla-DOM
+recreations of its component anatomy: Card panels (HUD, Health, Ammo),
+Progress bars, pill Badges for all floating world tags (enemy red, ally
+blue, friend emerald, portal primary), outline badge chips, and shadcn
+Buttons on the title/game-over screens. Locations sidebar (M): per-scene
+preview cards (framebuffer screenshots auto-captured on first visit,
+persisted to localStorage), Safe/Combat/Imported chips, ring-highlighted
+active card, and the zip drop-zone.
 
 ## Physics & audio notes
 
