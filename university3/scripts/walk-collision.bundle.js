@@ -4504,15 +4504,77 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     _showTitle() {
       this.state = "title";
       this._overlay.style.display = "flex";
-      let bg = "";
+      let bg = "", bg2 = "";
       try {
         const cfg = window.config;
         const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
         bg = `${window.location.origin}/api/assets/299000418/file/title-bg.png?branchId=${bid}`;
+        bg2 = `${window.location.origin}/api/assets/299000831/file/title-bg-2.png?branchId=${bid}`;
       } catch (e) {
       }
       const key = (k, l) => `<span><span style="font-weight:600;color:var(--foreground)">${k}</span> <span style="color:rgba(250,250,250,0.5)">${l}</span></span>`;
-      this._overlay.innerHTML = `<div style="position:absolute;inset:0;overflow:hidden" aria-hidden="true"><div class="spl-camera" style="position:absolute;inset:-32px"><img src="${bg}" style="width:100%;height:100%;object-fit:cover;display:block"></div><div class="spl-light" style="position:absolute;inset:0"></div><div class="spl-haze" style="position:absolute;inset:0"></div><div style="position:absolute;inset:0;background:rgba(9,9,11,0.55)"></div><div style="position:absolute;inset:0;background:radial-gradient(ellipse 72% 68% at 50% 48%,transparent 28%,rgba(9,9,11,0.86) 100%)"></div><div class="spl-grain" style="position:absolute;inset:0"></div><div style="position:absolute;top:0;left:0;right:0;height:1px;background:rgba(250,250,250,0.1)"></div></div><div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:28px;max-width:640px;padding:0 24px;margin-top:32px"><div class="spl-up sg-mono" style="animation-delay:0.2s;font-size:11px;letter-spacing:0.25em;text-transform:uppercase;color:rgba(250,250,250,0.5);font-weight:500">University of Toronto</div><div class="spl-up" style="animation-delay:0.2s;font-weight:900;font-size:clamp(64px,14vw,144px);line-height:1;letter-spacing:-0.03em;color:var(--foreground)">SPLAT</div><div class="spl-up" style="animation-delay:0.6s;border:1px solid rgba(255,255,255,0.1);background:rgba(13,13,16,0.8);backdrop-filter:blur(4px);padding:16px 24px;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font-size:14px">${key("WASD", "move")}${key("Shift", "run")}${key("Space", "jump")}${key("C", "crouch")}</div><div style="display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font-size:14px">${key("LMB", "fire")}${key("R", "reload")}${key("T", "targets")}${key("M", "map")}</div></div><div class="spl-up spl-btn" style="animation-delay:0.8s">Click to start<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>`;
+      this._overlay.innerHTML = `<div style="position:absolute;inset:0;overflow:hidden" aria-hidden="true"><div class="spl-camera" style="position:absolute;inset:-32px"><img id="spl-bg-a" src="${bg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 1.1s ease;opacity:1"><img id="spl-bg-b" src="${bg2}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 1.1s ease;opacity:0"></div><div class="spl-light" style="position:absolute;inset:0"></div><div class="spl-haze" style="position:absolute;inset:0"></div><div style="position:absolute;inset:0;background:rgba(9,9,11,0.55)"></div><div style="position:absolute;inset:0;background:radial-gradient(ellipse 72% 68% at 50% 48%,transparent 28%,rgba(9,9,11,0.86) 100%)"></div><div class="spl-grain" style="position:absolute;inset:0"></div><div style="position:absolute;top:0;left:0;right:0;height:1px;background:rgba(250,250,250,0.1)"></div></div><div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:28px;max-width:640px;padding:0 24px;margin-top:32px"><div class="spl-up sg-mono" style="animation-delay:0.2s;font-size:11px;letter-spacing:0.25em;text-transform:uppercase;color:rgba(250,250,250,0.5);font-weight:500">University of Toronto</div><div class="spl-up" style="animation-delay:0.2s;position:relative;width:min(90vw,900px);height:clamp(64px,14vw,144px);filter:url(#spl-threshold) blur(0.6px)"><span id="spl-t1" style="position:absolute;inset:0;font-weight:900;font-size:clamp(64px,14vw,144px);line-height:1;letter-spacing:-0.03em;color:var(--foreground)"></span><span id="spl-t2" style="position:absolute;inset:0;font-weight:900;font-size:clamp(64px,14vw,144px);line-height:1;letter-spacing:-0.03em;color:var(--foreground)"></span></div><svg width="0" height="0" style="position:absolute"><defs><filter id="spl-threshold"><feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 255 -140"/></filter></defs></svg><div class="spl-up" style="animation-delay:0.6s;border:1px solid rgba(255,255,255,0.1);background:rgba(13,13,16,0.8);backdrop-filter:blur(4px);padding:16px 24px;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font-size:14px">${key("WASD", "move")}${key("Shift", "run")}${key("Space", "jump")}${key("C", "crouch")}</div><div style="display:flex;justify-content:center;gap:24px;flex-wrap:wrap;font-size:14px">${key("LMB", "fire")}${key("R", "reload")}${key("T", "targets")}${key("M", "map")}</div></div><div class="spl-up spl-btn" style="animation-delay:0.8s">Click to start<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>`;
+      try {
+        const texts = ["SPLAT", "THE 6IX"];
+        const morphTime = 1.5, cooldownTime = 0.5;
+        const t1 = document.getElementById("spl-t1");
+        const t2 = document.getElementById("spl-t2");
+        const bgEls = [document.getElementById("spl-bg-a"), document.getElementById("spl-bg-b")];
+        let idx = 0, morph = 0, cooldown = 0, lastT = performance.now();
+        const setBg = (i2) => {
+          for (let k = 0; k < 2; k++) {
+            const el = bgEls[k];
+            if (el) el.style.opacity = i2 % 2 === k ? "1" : "0";
+          }
+        };
+        const setStyles = (fraction) => {
+          t2.style.filter = `blur(${Math.min(8 / fraction - 8, 100)}px)`;
+          t2.style.opacity = `${Math.pow(fraction, 0.4) * 100}%`;
+          const inv = 1 - fraction;
+          t1.style.filter = `blur(${Math.min(8 / inv - 8, 100)}px)`;
+          t1.style.opacity = `${Math.pow(inv, 0.4) * 100}%`;
+          t1.textContent = texts[idx % texts.length];
+          t2.textContent = texts[(idx + 1) % texts.length];
+        };
+        const tick = () => {
+          if (this.state !== "title" || !t1.isConnected) {
+            this._titleRaf = 0;
+            return;
+          }
+          this._titleRaf = requestAnimationFrame(tick);
+          const now = performance.now();
+          const dt = (now - lastT) / 1e3;
+          lastT = now;
+          cooldown -= dt;
+          if (cooldown <= 0) {
+            morph -= cooldown;
+            cooldown = 0;
+            let fraction = morph / morphTime;
+            if (fraction > 1) {
+              cooldown = cooldownTime;
+              fraction = 1;
+              morph = 0;
+            }
+            setStyles(fraction);
+            if (fraction === 1) {
+              idx++;
+              setBg(idx);
+            }
+          } else {
+            morph = 0;
+            t2.style.filter = "none";
+            t2.style.opacity = "100%";
+            t1.style.filter = "none";
+            t1.style.opacity = "0%";
+          }
+        };
+        if (t1 && t2) {
+          setBg(0);
+          setStyles(0);
+          tick();
+        }
+      } catch (e) {
+      }
     }
     _start() {
       this.state = "playing";
