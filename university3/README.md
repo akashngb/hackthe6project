@@ -50,6 +50,11 @@ gsplat asset **298979100**.
 | 298984311 | ammo.js                 | Bullet physics fallback (asm.js) |
 | 298984312 | ammo.wasm.js            | Bullet wasm glue                 |
 | 298984313 | ammo.wasm.wasm          | Bullet wasm binary               |
+| 298986048–67 | 20 audio assets      | gunfire/reload/pain/seeyou/steps/ambience |
+| 298986925 | target-archery.glb      | practice target                  |
+| 298987089/90/91 | myhal.sog + voxel  | Myhal hallway scene              |
+| 298987672/73/74 | bahen-front.sog + voxel | Bahen main entrance (outdoor, safe zone) |
+| 298987763/64/65 | classroom.sog + voxel | Bahen classroom scene          |
 
 Scene entities: `University 3` (gsplat, position **(0,0,0)**, rotation
 **(0,0,180)** — must stay that way or rendering and collision diverge) and
@@ -91,6 +96,8 @@ await fetch('/api/assets/298979018', { method: 'PUT', body: fd });
 | [ / ] | shrink / grow aimed label sphere |
 | L | toggle labels · Backspace delete label |
 | B | toggle the collision voxel view (supersplat-style grid) |
+| T | toggle target practice mode (small floating targets, no ricochets) |
+| top-right dropdown | teleport between scanned locations |
 | ` | toggle the green debug HUD |
 
 ## Physics & audio notes
@@ -103,6 +110,20 @@ the original project are wired: carbine shots/reloads/dryfire, distance-
 scaled NPC gunfire, "I see you" callouts, pain grunts, walk/run footsteps,
 and room ambience. `test/test-containment.mjs` fires 40 random fast balls
 at 30fps and asserts none leave the collision grid.
+
+## Locations (SceneManager)
+
+`SCENES` in the adapter lists four scans: Bahen 5F (spawn pinned at
+(-0.22, 0.75, 0.05)), Myhal, Bahen Front (outdoor; `noSoldiers` safe zone
+with a door portal at (2.64, 1.65, 7.08) → Bahen 5F), and Bahen Classroom.
+Switching (dropdown or portal contact) hot-swaps the gsplat asset and
+mutates the shared VoxelCollision's internals in place, so every system
+(walking, balls, NPCs, targets, voxel view, labels) re-derives from the new
+grid; combat waves restart in combat zones and are suppressed in safe
+zones at the spawner level. Soldiers are a fixed 1.65m and targets
+0.3–0.6m (metric — scans are near-metric since the fixed 1.5m player
+capsule feels right in all of them). Per-scene voxel data lives under
+collision/<scene>/ in this repo and as editor assets at runtime.
 
 ## Gameplay (SIEGE)
 
