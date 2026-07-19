@@ -3646,6 +3646,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     }
   };
   var PARTY_URL = "wss://roland-obligations-futures-collections.trycloudflare.com";
+  var RELAY_URL_ASSET = [298997427, "relay-url.json"];
   var NET_SEND_INTERVAL = 1 / 12;
   var NetSystem = class {
     constructor(app, script, refs) {
@@ -3667,6 +3668,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       __publicField(this, "_destroyed", false);
       __publicField(this, "_screenPos", null);
       __publicField(this, "_url", "");
+      __publicField(this, "_resolveUrl", null);
       this.app = app;
       this.script = script;
       this.npcs = refs.npcs;
@@ -3674,19 +3676,40 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this.scenes = refs.scenes;
       this.director = refs.director;
       this.walkCamera = refs.walkCamera;
-      let base = "";
+      let param = "";
       try {
         const q = new URLSearchParams(window.location.search);
-        base = q.get("party") || PARTY_URL;
+        param = q.get("party") || "";
         this.room = q.get("room") || "hack6";
       } catch (e) {
       }
-      if (!base) {
-        console.log("net: multiplayer off (no ?party= url configured)");
-        return;
+      const finish = (base) => {
+        if (!base) {
+          console.log("net: multiplayer off (no relay url)");
+          return;
+        }
+        base = base.replace(/^http/, "ws").replace(/\/+$/, "");
+        this._url = `${base}/parties/main/${encodeURIComponent(this.room)}`;
+        this._connect();
+      };
+      if (param) {
+        this._resolveUrl = () => finish(param);
+      } else {
+        this._resolveUrl = async () => {
+          let base = PARTY_URL;
+          try {
+            const cfg = window.config;
+            const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
+            const r = await fetch(`${window.location.origin}/api/assets/${RELAY_URL_ASSET[0]}/file/${RELAY_URL_ASSET[1]}?branchId=${bid}`);
+            if (r.ok) {
+              const j = await r.json();
+              if (j && j.url) base = j.url;
+            }
+          } catch (e) {
+          }
+          finish(base);
+        };
       }
-      base = base.replace(/^http/, "ws").replace(/\/+$/, "");
-      this._url = `${base}/parties/main/${encodeURIComponent(this.room)}`;
       try {
         this.myName = localStorage.getItem("siege-name") || "";
       } catch (e) {
@@ -3701,10 +3724,10 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       }
       this.enabled = true;
       this._screenPos = new pc.Vec3();
-      this._connect();
+      this._resolveUrl();
     }
     _connect() {
-      if (this._destroyed) return;
+      if (this._destroyed || !this._url) return;
       try {
         const ws = new WebSocket(this._url);
         this.ws = ws;

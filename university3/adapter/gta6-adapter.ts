@@ -2832,8 +2832,11 @@ class DropSystem {
 
 // ---- multiplayer: presence + shots over a PartyKit relay ----
 
-/** deployed relay base URL; override with ?party=... (npx partykit dev = ws://127.0.0.1:1999) */
+/** fallback relay base URL; the live URL is read from the relay-url.json
+ *  asset (id below) so a tunnel restart only needs an asset update, not a
+ *  game rebuild. Override per-session with ?party=... */
 const PARTY_URL = 'wss://roland-obligations-futures-collections.trycloudflare.com';
+const RELAY_URL_ASSET: [number, string] = [298997427, 'relay-url.json'];
 const NET_SEND_INTERVAL = 1 / 12;
 
 class NetSystem {
@@ -2864,18 +2867,41 @@ class NetSystem {
         this.director = refs.director;
         this.walkCamera = refs.walkCamera;
 
-        let base = '';
+        let param = '';
         try {
             const q = new URLSearchParams(window.location.search);
-            base = q.get('party') || PARTY_URL;
+            param = q.get('party') || '';
             this.room = q.get('room') || 'hack6';
         } catch (e) { /* headless */ }
-        if (!base) {
-            console.log('net: multiplayer off (no ?party= url configured)');
-            return;
+
+        const finish = (base: string) => {
+            if (!base) {
+                console.log('net: multiplayer off (no relay url)');
+                return;
+            }
+            base = base.replace(/^http/, 'ws').replace(/\/+$/, '');
+            this._url = `${base}/parties/main/${encodeURIComponent(this.room)}`;
+            this._connect();
+        };
+
+        if (param) {
+            this._resolveUrl = () => finish(param);
+        } else {
+            // live indirection: read the current relay URL from the asset
+            this._resolveUrl = async () => {
+                let base = PARTY_URL;
+                try {
+                    const cfg = (window as any).config;
+                    const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
+                    const r = await fetch(`${window.location.origin}/api/assets/${RELAY_URL_ASSET[0]}/file/${RELAY_URL_ASSET[1]}?branchId=${bid}`);
+                    if (r.ok) {
+                        const j = await r.json();
+                        if (j && j.url) base = j.url;
+                    }
+                } catch (e) { /* use fallback */ }
+                finish(base);
+            };
         }
-        base = base.replace(/^http/, 'ws').replace(/\/+$/, '');
-        this._url = `${base}/parties/main/${encodeURIComponent(this.room)}`;
 
         try {
             this.myName = localStorage.getItem('siege-name') || '';
@@ -2891,13 +2917,14 @@ class NetSystem {
 
         this.enabled = true;
         this._screenPos = new pc.Vec3();
-        this._connect();
+        this._resolveUrl();
     }
 
     _url = '';
+    _resolveUrl: any = null;
 
     _connect() {
-        if (this._destroyed) return;
+        if (this._destroyed || !this._url) return;
         try {
             const ws = new WebSocket(this._url);
             this.ws = ws;
