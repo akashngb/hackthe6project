@@ -3155,8 +3155,11 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       spawn: { x: 0.04, y: 0.21, z: 1.22 },
       rot: [0, 0, 180],
       noSoldiers: true,
-      noNpcs: true
+      noNpcs: true,
       // no friends / requisitioned units either
+      portals: [
+        { x: -3.58, y: 4.35, z: 16.07, radius: 1.4, to: 4, spawnAt: { x: 8.55, y: 0.49, z: 11.71 }, label: "\u2192 Bahen Hallway" }
+      ]
     }
   ];
   var SceneManager = class {
