@@ -1,0 +1,13 @@
+{
+  "name": "siege-relay",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "partykit": "^0.0.115",
+    "ws": "^8.18.0"
+  },
+  "scripts": {
+    "relay": "node relay.mjs",
+    "dev": "partykit dev"
+  }
+}

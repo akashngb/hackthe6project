@@ -3,7 +3,7 @@
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // pc-shim.js
+  // ../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/pc-shim.js
   var _pc = globalThis.pc;
   var math = _pc.math;
   var Vec3 = _pc.Vec3;
@@ -13,7 +13,7 @@
   var INDEXFORMAT_UINT32 = _pc.INDEXFORMAT_UINT32;
   var SEMANTIC_POSITION = _pc.SEMANTIC_POSITION;
 
-  // vendor/core/math.ts
+  // ../../../../gta6/src/core/math.ts
   var damp = (damping, dt) => 1 - Math.pow(damping, dt * 1e3);
   var mod = (n, m) => (n % m + m) % m;
   var vecToAngles = (result, vec) => {
@@ -25,7 +25,7 @@
     return result;
   };
 
-  // vendor/cameras/camera-utils.ts
+  // ../../../../gta6/src/cameras/camera-utils.ts
   var DEFAULT_CONTROLLER_DAMPING = 0.95;
   var rotation = new Quat();
   var applyFrameRotation = (angles, rotate, minPitch = -90, maxPitch = 90) => {
@@ -63,7 +63,7 @@
     return angles;
   };
 
-  // vendor/cameras/spawn-state.ts
+  // ../../../../gta6/src/cameras/spawn-state.ts
   var SpawnState = class {
     constructor() {
       __publicField(this, "_position", new Vec3());
@@ -116,7 +116,7 @@
     }
   };
 
-  // vendor/collision/find-spawn.ts
+  // ../../../../gta6/src/collision/find-spawn.ts
   var SEARCH_RADIUS = 5;
   var SEARCH_RADIUS_SQ = SEARCH_RADIUS * SEARCH_RADIUS;
   var RAY_MAX_DIST = 1e3;
@@ -178,7 +178,7 @@
     return found;
   };
 
-  // vendor/cameras/walk-controller.ts
+  // ../../../../gta6/src/cameras/walk-controller.ts
   var FIXED_DT = 1 / 60;
   var MAX_SUBSTEPS = 10;
   var out = { x: 0, y: 0, z: 0 };
@@ -471,7 +471,7 @@
     }
   };
 
-  // vendor/cameras/camera.ts
+  // ../../../../gta6/src/cameras/camera.ts
   var rotation2 = new Quat();
   var avec = new Vec3();
   var bvec = new Vec3();
@@ -511,7 +511,7 @@
     }
   };
 
-  // vendor/collision/collision.ts
+  // ../../../../gta6/src/collision/collision.ts
   var PENETRATION_EPSILON = 1e-4;
   var MAX_RESOLVE_ITERATIONS = 4;
   function resolveIterative(cx, cy, cz, findPenetration, constraintNormals, scratch, out2) {
@@ -564,7 +564,7 @@
     return hasSignificantPush;
   }
 
-  // vendor/collision/voxel-collision.ts
+  // ../../../../gta6/src/collision/voxel-collision.ts
   var SOLID_LEAF_MARKER = 4278190080 >>> 0;
   var FLAT_R = 2;
   var INV_SQRT2 = 1 / Math.sqrt(2);
@@ -1237,9 +1237,9 @@
     }
   };
 
-  // gta6-adapter.ts
+  // ../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/gta6-adapter.ts
   var pc = globalThis.pc;
-  var BUILD_TAG = "v10-clearance";
+  var BUILD_TAG = "v11-shadcn";
   console.log("[walk-collision] build", BUILD_TAG);
   var MOVE_SPEED = 4;
   var RUN_MULTIPLIER = 2;
@@ -1493,7 +1493,6 @@
   var GUN_LOCAL_EULER = [160, 0, 105];
   var GUN_LOCAL_SCALE = 50;
   var FLASH_LOCAL_POS = [0.9191, 0.1532, -64e-4];
-  var FLASH_LOCAL_SCALE = 100;
   var NPC_PERSONALITIES = [
     { name: "Sgt. Havoc", aggression: 0.9, randomness: 0.2 },
     { name: "Ghost", aggression: 0.3, randomness: 0.1 },
@@ -1545,6 +1544,8 @@
       __publicField(this, "_desiredCount", 0);
       __publicField(this, "_push", { x: 0, y: 0, z: 0 });
       __publicField(this, "_screenPos");
+      __publicField(this, "_reach", null);
+      __publicField(this, "_reachFrom", { x: 1e9, z: 1e9 });
       __publicField(this, "_refillT", 0);
       this.app = app;
       this.collision = collision;
@@ -1690,29 +1691,68 @@
       }
       this.npcs.length = 0;
       this._desiredCount = 0;
+      this._reach = null;
+      this._reachFrom = { x: 1e9, z: 1e9 };
+    }
+    /**
+     * Flood-fill the walkable region around the player on a 0.4m lattice.
+     * A neighbor cell is walkable if its floor is within a 0.45m step of the
+     * current cell (rails, ledges and balcony gaps fail this) and there is
+     * free space at torso height. This is true reachability: anything the
+     * player could walk to — and nothing they couldn't.
+     */
+    _computeReachable() {
+      const col = this.collision;
+      const pp = this._playerPos();
+      const STEP = 0.4;
+      const MAX_CELLS = 9e3;
+      const MAX_R = 30;
+      const startDown = col.queryRay(pp.x, pp.y, pp.z, 0, -1, 0, 4);
+      if (!startDown) {
+        this._reach = null;
+        return;
+      }
+      const key = (x, z) => `${Math.round(x / STEP)}|${Math.round(z / STEP)}`;
+      const seen = /* @__PURE__ */ new Set();
+      const cells = [];
+      const queue = [{ x: pp.x, z: pp.z, floor: startDown.y }];
+      seen.add(key(pp.x, pp.z));
+      while (queue.length && cells.length < MAX_CELLS) {
+        const c = queue.shift();
+        cells.push(c);
+        for (const [dx, dz] of [[STEP, 0], [-STEP, 0], [0, STEP], [0, -STEP]]) {
+          const nx = c.x + dx, nz = c.z + dz;
+          const k = key(nx, nz);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const ddx = nx - pp.x, ddz = nz - pp.z;
+          if (ddx * ddx + ddz * ddz > MAX_R * MAX_R) continue;
+          const down = col.queryRay(nx, c.floor + 1, nz, 0, -1, 0, 3);
+          if (!down) continue;
+          const nf = down.y;
+          if (Math.abs(nf - c.floor) > 0.45) continue;
+          if (!col.isFreeAt(nx, nf + 0.9, nz)) continue;
+          queue.push({ x: nx, z: nz, floor: nf });
+        }
+      }
+      this._reach = cells;
+      this._reachFrom = { x: pp.x, z: pp.z };
     }
     _randomFloorSpot() {
       const col = this.collision;
-      const res = col.voxelResolution;
-      const gMaxX = col.gridMinX + col.numVoxelsX * res;
-      const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
       const pp = this._playerPos();
-      const playerFloor = pp.y - 1.5;
-      const probeY = pp.y + 0.6;
-      for (let attempt = 0; attempt < 250; attempt++) {
-        const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
-        const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
+      const mdx = pp.x - this._reachFrom.x, mdz = pp.z - this._reachFrom.z;
+      if (!this._reach || mdx * mdx + mdz * mdz > 9) this._computeReachable();
+      if (!this._reach || this._reach.length < 10) return null;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const c = this._reach[Math.random() * this._reach.length | 0];
+        const x = c.x + (Math.random() - 0.5) * 0.3;
+        const z = c.z + (Math.random() - 0.5) * 0.3;
         const ddx = x - pp.x, ddz = z - pp.z;
         const dd = Math.sqrt(ddx * ddx + ddz * ddz);
         if (dd < 4 || dd > 28) continue;
-        const down = col.queryRay(x, probeY, z, 0, -1, 0, 20);
-        if (!down) continue;
-        const floor = down.y;
-        if (this.floorRange) {
-          if (floor < this.floorRange[0] - 0.05 || floor > this.floorRange[1] + 0.05) continue;
-        } else if (Math.abs(floor - playerFloor) > 1.2) {
-          continue;
-        }
+        const floor = c.floor;
+        if (this.floorRange && (floor < this.floorRange[0] - 0.05 || floor > this.floorRange[1] + 0.05)) continue;
         const up = col.queryRay(x, floor + 0.2, z, 0, 1, 0, 20);
         if (up && up.y - floor < this.npcHeight + 0.1) continue;
         if (!col.isFreeAt(x, floor + 0.9, z)) continue;
@@ -1742,7 +1782,8 @@
       if (deathB) model.anim.assignAnimation("DeathB", deathB, void 0, 1, false);
       root.setPosition(spot.x, spot.y, spot.z);
       const el = document.createElement("div");
-      el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;color:#fff;background:rgba(30,30,30,0.75);font:11px monospace;padding:1px 7px;border-radius:9px;pointer-events:none;white-space:nowrap;";
+      el.className = "sg sg-mono";
+      el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:#f87171;border:1px solid rgba(239,68,68,0.4);letter-spacing:1px;";
       document.body.appendChild(el);
       const pers = NPC_PERSONALITIES[Math.floor(Math.random() * NPC_PERSONALITIES.length)];
       const npc = {
@@ -1784,10 +1825,10 @@
     _syncTag(npc) {
       if (!npc.el) return;
       if (npc.state === "dying" || npc.state === "dead") {
-        npc.el.textContent = (npc.pers ? npc.pers.name : "soldier") + " \u2620";
+        npc.el.textContent = "\u2620";
         npc.el.style.background = "rgba(120,20,20,0.8)";
       } else {
-        npc.el.textContent = `${npc.pers ? npc.pers.name : "soldier"} ${"\u2665".repeat(npc.hp)}`;
+        npc.el.textContent = "\u2665".repeat(Math.max(0, npc.hp));
         npc.el.style.background = "rgba(30,30,30,0.75)";
       }
     }
@@ -1817,7 +1858,7 @@
         const facing = { x: -Math.sin(npc.yaw * Math.PI / 180), z: -Math.cos(npc.yaw * Math.PI / 180) };
         const frontal = camFwd.x * facing.x + camFwd.z * facing.z < 0;
         this._setAnim(npc, frontal ? "DeathB" : "DeathF");
-        if (npc.flash) npc.flash.enabled = false;
+        if (npc.muzzleLight) npc.muzzleLight.intensity = 0;
         if (this.onKill) this.onKill(npc);
       }
       this._syncTag(npc);
@@ -1983,30 +2024,21 @@
         gun.setLocalEulerAngles(GUN_LOCAL_EULER[0], GUN_LOCAL_EULER[1], GUN_LOCAL_EULER[2]);
         gun.setLocalScale(GUN_LOCAL_SCALE, GUN_LOCAL_SCALE, GUN_LOCAL_SCALE);
         npc.gun = gun;
-        if (this.assets.flash) {
-          const flash = this.assets.flash.resource.instantiateRenderEntity();
-          for (const r of flash.findComponents("render")) {
-            for (const mi of r.meshInstances) mi.cull = false;
-          }
-          gun.addChild(flash);
-          flash.setLocalPosition(FLASH_LOCAL_POS[0], FLASH_LOCAL_POS[1], FLASH_LOCAL_POS[2]);
-          flash.setLocalScale(FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE);
-          flash.enabled = false;
-          npc.flash = flash;
-          npc.flashOn = 0;
-          try {
-            const lightEnt = new pc.Entity("muzzle-light");
-            flash.addChild(lightEnt);
-            lightEnt.addComponent("light", {
-              type: "omni",
-              color: new pc.Color(1, 0.85, 0.4),
-              intensity: 0,
-              range: 4,
-              castShadows: false
-            });
-            npc.muzzleLight = lightEnt.light;
-          } catch (e) {
-          }
+        npc.flash = null;
+        npc.flashOn = 0;
+        try {
+          const lightEnt = new pc.Entity("muzzle-light");
+          gun.addChild(lightEnt);
+          lightEnt.setLocalPosition(FLASH_LOCAL_POS[0], FLASH_LOCAL_POS[1], FLASH_LOCAL_POS[2]);
+          lightEnt.addComponent("light", {
+            type: "omni",
+            color: new pc.Color(1, 0.85, 0.4),
+            intensity: 0,
+            range: 4,
+            castShadows: false
+          });
+          npc.muzzleLight = lightEnt.light;
+        } catch (e) {
         }
         console.log("npcSystem: m16 attached to", npc.root.name, "scale", GUN_LOCAL_SCALE);
       } catch (e) {
@@ -2117,10 +2149,7 @@
             npc.shootT = 0.45 + Math.random() * 0.4 * (1 + npc.pers.randomness);
             npc.bullets--;
             if (npc.bullets <= 0) npc.reloadT = NPC_RELOAD_TIME;
-            if (npc.flash) {
-              npc.flash.enabled = true;
-              npc.flashOn = 0.05;
-            }
+            npc.flashOn = 0.05;
             if (npc.muzzleLight) npc.muzzleLight.intensity = 3;
             if (this.sounds) {
               this.sounds.play("shoot.mp3", {
@@ -2229,6 +2258,7 @@
       __publicField(this, "_ammoDiv", null);
       __publicField(this, "balls", null);
       __publicField(this, "sounds", null);
+      __publicField(this, "onShoot", null);
       __publicField(this, "_dryT", 0);
       this.app = app;
       this.collision = collision;
@@ -2310,17 +2340,19 @@
     }
     _makeUi() {
       this._ammoDiv = document.createElement("div");
-      this._ammoDiv.style.cssText = "position:fixed;bottom:26px;right:26px;color:#fff;font:bold 26px monospace;z-index:9999;text-shadow:0 0 4px rgba(0,0,0,0.8);pointer-events:none;letter-spacing:2px;";
+      this._ammoDiv.className = "sg sg-panel";
+      this._ammoDiv.style.cssText = "position:fixed;bottom:20px;right:16px;z-index:9999;padding:10px 14px;pointer-events:none;";
       document.body.appendChild(this._ammoDiv);
       this._updateAmmo();
-      const dot = document.createElement("div");
-      dot.style.cssText = "position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:rgba(255,255,255,0.9);box-shadow:0 0 3px rgba(0,0,0,0.9);z-index:9998;pointer-events:none;";
-      document.body.appendChild(dot);
+      const ret = document.createElement("div");
+      ret.className = "fs-reticle";
+      document.body.appendChild(ret);
     }
     _updateAmmo() {
-      if (this._ammoDiv) {
-        this._ammoDiv.textContent = this.reloading ? "RELOADING\u2026" : `${this.ammo} / ${VM_MAG_SIZE}`;
-      }
+      if (!this._ammoDiv) return;
+      const pct = Math.max(0, Math.min(100, this.ammo / VM_MAG_SIZE * 100));
+      const label = this.reloading ? '<span style="color:var(--muted-fg)">Reloading\u2026</span>' : `<b style="color:var(--foreground);font-size:16px;font-weight:600">${this.ammo}</b><span style="color:var(--muted-fg)"> / ${VM_MAG_SIZE}</span>`;
+      this._ammoDiv.innerHTML = `<div style="font-size:11px;font-weight:500;color:var(--muted-fg);display:flex;justify-content:space-between;align-items:baseline;gap:18px;margin-bottom:6px"><span>Ammo</span><span class="sg-mono">${label}</span></div><div class="sg-progress" style="width:132px"><div style="width:${pct}%;${this.reloading ? "opacity:0.25" : ""}"></div></div>`;
     }
     play(name) {
       const c = VM_CLIPS[name];
@@ -2400,6 +2432,7 @@
           dz = f.z;
         }
         this.balls.throwBall({ x: ox, y: oy, z: oz }, { x: dx, y: dy, z: dz }, VM_BALL_SPEED, VM_BALL_RADIUS);
+        if (this.onShoot) this.onShoot(ox, oy, oz, dx, dy, dz);
       }
       this._updateAmmo();
       if (this.ammo <= 0) this.reload();
@@ -2612,7 +2645,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this.app.root.addChild(sphere);
       marker.sphere = sphere;
       const el = document.createElement("div");
-      el.style.cssText = "position:fixed;transform:translate(-50%,-140%);z-index:9998;color:#fff;background:rgba(20,110,220,0.85);font:12px monospace;padding:2px 8px;border-radius:10px;pointer-events:none;white-space:nowrap;";
+      el.className = "sg sg-mono";
+      el.style.cssText = "position:fixed;transform:translate(-50%,-140%);z-index:9998;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:var(--foreground);border:1px solid var(--border);";
       el.textContent = marker.label;
       document.body.appendChild(el);
       marker.el = el;
@@ -3059,7 +3093,9 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       gsplatId: 298979100,
       voxel: "embedded",
       spawn: { x: -0.22, y: 0.75, z: 0.05 },
-      rot: [0, 0, 180]
+      rot: [0, 0, 180],
+      faceTarget: { x: -0.1, z: -10 }
+      // spawn/respawn looking down the hallway
     },
     {
       name: "Myhal",
@@ -3079,8 +3115,10 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       // grid center
       rot: [0, 0, 180],
       noSoldiers: true,
+      faceTarget: { x: 2.64, z: 7.08 },
+      // spawn facing the door portal
       portals: [
-        { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 4, label: "\u2192 Bahen Hallway" }
+        { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 5, spawnAt: { x: 0.04, y: 0.21, z: 1.22 }, label: "\u2192 Bahen Stairs" }
       ]
     },
     {
@@ -3090,6 +3128,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       voxelBin: [298987765, "classroom.voxel.bin"],
       spawn: { x: -1.54, y: 0.3, z: -6.26 },
       rot: [0, 0, 180],
+      faceTarget: { x: 0.8, z: 1.5 },
+      // spawn facing into the room (the tables)
       portals: [
         { x: -1.54, y: 0.3, z: -6.26, radius: 1.4, to: 4, spawnAt: { x: 9.46, y: 0.42, z: 7.25 }, label: "\u2192 Bahen Hallway" }
       ]
@@ -3101,8 +3141,25 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       voxelBin: [298988210, "bahen-hallway.voxel.bin"],
       spawn: { x: -1.26, y: 0.36, z: -2.72 },
       rot: [0, 0, 180],
+      faceTarget: { x: 9.46, z: 7.25 },
+      // spawn/respawn facing the classroom door
       portals: [
-        { x: 9.46, y: 0.42, z: 7.25, radius: 1.4, to: 3, label: "\u2192 Classroom" }
+        { x: 9.46, y: 0.42, z: 7.25, radius: 1.4, to: 3, label: "\u2192 Classroom" },
+        { x: 1.67, y: 0.45, z: 0.77, radius: 1.4, to: 0, label: "\u2192 Bahen 5F" }
+      ]
+    },
+    {
+      name: "Bahen Stairs",
+      gsplatId: 298999341,
+      voxelJson: [298999343, "bahen-stairs.voxel.json"],
+      voxelBin: [298999344, "bahen-stairs.voxel.bin"],
+      spawn: { x: 0.04, y: 0.21, z: 1.22 },
+      rot: [0, 0, 180],
+      noSoldiers: true,
+      noNpcs: true,
+      // no friends / requisitioned units either
+      portals: [
+        { x: -3.58, y: 4.35, z: 16.07, radius: 1.4, to: 4, spawnAt: { x: 8.55, y: 0.49, z: 11.71 }, label: "\u2192 Bahen Hallway" }
       ]
     }
   ];
@@ -3119,6 +3176,12 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       __publicField(this, "_select", null);
       __publicField(this, "_portals", []);
       __publicField(this, "_screenPos", null);
+      __publicField(this, "_cards", []);
+      __publicField(this, "_thumbs", {});
+      __publicField(this, "_sidebar", null);
+      __publicField(this, "_cardsWrap", null);
+      /** doorway-blink: fade the world to black and back */
+      __publicField(this, "_fadeEl", null);
       this.app = app;
       this.collision = collision;
       this.controller = controller;
@@ -3127,22 +3190,151 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._makeDropdown();
     }
     _makeDropdown() {
-      const sel = document.createElement("select");
-      sel.id = "scene-select";
-      sel.style.cssText = "position:fixed;top:14px;right:14px;z-index:10006;background:rgba(13,17,23,0.85);color:#fff;font:bold 13px monospace;border:1px solid #e63946;border-radius:5px;padding:6px 10px;cursor:pointer;outline:none;";
-      SCENES.forEach((s, i) => {
-        const o = document.createElement("option");
-        o.value = String(i);
-        o.textContent = "\u{1F4CD} " + s.name;
-        sel.appendChild(o);
+      injectUiCss();
+      const sb = document.createElement("div");
+      sb.id = "sg-sidebar";
+      sb.className = "sg sg-panel hidden";
+      sb.innerHTML = "<h3>Locations <span>M to close</span></h3>";
+      const wrap = document.createElement("div");
+      wrap.id = "sg-cards";
+      sb.appendChild(wrap);
+      const dz = document.createElement("div");
+      dz.id = "sg-dropzone";
+      dz.innerHTML = '<span style="color:var(--foreground);font-weight:500">Drop a scan .zip</span><br><span style="font-size:10px">.sog + voxel data becomes a new location</span>';
+      dz.addEventListener("click", () => {
+        const inp = document.createElement("input");
+        inp.type = "file";
+        inp.accept = ".zip";
+        inp.onchange = () => {
+          const f = inp.files && inp.files[0];
+          const drops = this.script._drops;
+          if (f && drops) drops._import(f);
+        };
+        inp.click();
       });
-      sel.addEventListener("change", () => {
-        const i = parseInt(sel.value, 10);
-        sel.blur();
+      dz.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dz.classList.add("over");
+      });
+      dz.addEventListener("dragleave", () => dz.classList.remove("over"));
+      dz.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dz.classList.remove("over");
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        const drops = this.script._drops;
+        if (f && drops) drops._import(f);
+      });
+      sb.appendChild(dz);
+      const req = this.script._requisition;
+      if (req) req.makeCard(sb);
+      document.body.appendChild(sb);
+      this._sidebar = sb;
+      this._cardsWrap = wrap;
+      SCENES.forEach((_, i) => this.addCard(i));
+      this._setActive(this.current);
+    }
+    addCard(i) {
+      const s = SCENES[i];
+      const card = document.createElement("div");
+      card.className = "sg-card";
+      let thumb = this._thumbs[s.name];
+      try {
+        thumb = thumb || localStorage.getItem("sg-thumb-" + s.name);
+      } catch (e) {
+      }
+      if (thumb) {
+        this._thumbs[s.name] = thumb;
+        card.innerHTML = `<img class="sg-thumb" src="${thumb}">`;
+      } else {
+        const initials = s.name.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 3);
+        card.innerHTML = `<div class="sg-thumb-ph">${initials}</div>`;
+      }
+      const chip = s.gsplatAsset ? '<span class="sg-chip drop">Imported</span>' : s.noSoldiers ? '<span class="sg-chip safe">Safe</span>' : '<span class="sg-chip combat">Combat</span>';
+      const row = document.createElement("div");
+      row.className = "sg-card-row";
+      row.innerHTML = `<span><span style="color:var(--muted-fg)" class="sg-mono">${String(i + 1).padStart(2, "0")}&nbsp;&nbsp;</span>${s.name}</span>${chip}`;
+      card.appendChild(row);
+      card.addEventListener("click", () => {
+        this.toggleSidebar(false);
         this.switchTo(i);
       });
-      document.body.appendChild(sel);
-      this._select = sel;
+      this._cardsWrap.appendChild(card);
+      this._cards[i] = card;
+    }
+    _setActive(i) {
+      this._cards.forEach((c, idx) => {
+        if (c) c.classList.toggle("active", idx === i);
+      });
+    }
+    toggleSidebar(force) {
+      if (!this._sidebar) return;
+      const show = force !== void 0 ? force : this._sidebar.classList.contains("hidden");
+      this._sidebar.classList.toggle("hidden", !show);
+      if (show) {
+        try {
+          document.exitPointerLock();
+        } catch (e) {
+        }
+      }
+    }
+    _setThumb(name, url) {
+      this._thumbs[name] = url;
+      try {
+        localStorage.setItem("sg-thumb-" + name, url);
+      } catch (e) {
+      }
+      const i = SCENES.findIndex((s) => s.name === name);
+      const card = this._cards[i];
+      if (card) {
+        const ph = card.querySelector(".sg-thumb-ph");
+        if (ph) {
+          const img = document.createElement("img");
+          img.className = "sg-thumb";
+          img.src = url;
+          ph.replaceWith(img);
+        } else {
+          const img = card.querySelector(".sg-thumb");
+          if (img) img.src = url;
+        }
+      }
+    }
+    /** capture the framebuffer shortly after arriving in a scene */
+    _maybeCapture() {
+      const scene = SCENES[this.current];
+      if (!scene || this._thumbs[scene.name]) return;
+      const dev = this.app.graphicsDevice;
+      const gl = dev.gl;
+      if (!gl) return;
+      const handler = () => {
+        this.app.off("postrender", handler);
+        try {
+          const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+          const px = new Uint8Array(w * h * 4);
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          let lum = 0;
+          for (let i = 0; i < 40; i++) {
+            const o = (Math.random() * w * h | 0) * 4;
+            lum += px[o] + px[o + 1] + px[o + 2];
+          }
+          if (lum < 200) return;
+          const full = document.createElement("canvas");
+          full.width = w;
+          full.height = h;
+          const fctx = full.getContext("2d");
+          const img = fctx.createImageData(w, h);
+          for (let y = 0; y < h; y++) {
+            img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+          }
+          fctx.putImageData(img, 0, 0);
+          const t = document.createElement("canvas");
+          t.width = 256;
+          t.height = 110;
+          t.getContext("2d").drawImage(full, 0, 0, 256, 110);
+          this._setThumb(scene.name, t.toDataURL("image/jpeg", 0.65));
+        } catch (e) {
+        }
+      };
+      this.app.on("postrender", handler);
     }
     _assetUrl(id, fname) {
       let q = "";
@@ -3155,6 +3347,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
     }
     async _loadVoxel(scene) {
+      if (scene.voxelData) return scene.voxelData;
       if (scene.voxel === "embedded") {
         const data = window.UNI3_VOXEL;
         const bin = atob(data.binBase64);
@@ -3173,11 +3366,27 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       const binResp = await fetch(this._assetUrl(scene.voxelBin[0], scene.voxelBin[1]));
       const buffer = await binResp.arrayBuffer();
       const view = new Uint32Array(buffer);
-      return {
+      scene.voxelData = {
         meta,
         nodes: view.slice(0, meta.nodeCount),
         leafData: view.slice(meta.nodeCount, meta.nodeCount + meta.leafDataCount)
       };
+      return scene.voxelData;
+    }
+    _fade(to, ms) {
+      try {
+        if (!this._fadeEl) {
+          const f2 = document.createElement("div");
+          f2.style.cssText = "position:fixed;inset:0;z-index:10003;background:#000;opacity:0;pointer-events:none;";
+          document.body.appendChild(f2);
+          this._fadeEl = f2;
+        }
+        const f = this._fadeEl;
+        f.style.transition = `opacity ${ms}ms ease`;
+        f.style.opacity = String(to);
+      } catch (e) {
+      }
+      return new Promise((r) => setTimeout(r, ms + 20));
     }
     _applyCollision(meta, nodes, leafData) {
       const c = this.collision;
@@ -3229,8 +3438,9 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           ent = null;
         }
         const el = document.createElement("div");
-        el.style.cssText = "position:fixed;transform:translate(-50%,-120%);z-index:9998;color:#fff;background:rgba(20,80,220,0.85);font:bold 12px monospace;padding:3px 10px;border-radius:10px;pointer-events:none;white-space:nowrap;";
-        el.textContent = cfg.label || "portal";
+        el.className = "sg sg-mono";
+        el.style.cssText = "position:fixed;transform:translate(-50%,-120%);z-index:9998;font-family:var(--font);font-size:11px;font-weight:600;padding:3px 12px;border-radius:9999px;background:var(--primary);color:var(--primary-fg);pointer-events:none;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.5);";
+        el.textContent = "\u2316 " + (cfg.label || "portal").replace("\u2192 ", "");
         document.body.appendChild(el);
         this._portals.push({ cfg, ent, el, armed: false });
       }
@@ -3267,6 +3477,23 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         }
       }
     }
+    /** warm the voxel grid + splat for every scene a portal here leads to */
+    _prefetchDestinations(scene) {
+      if (!scene.portals) return;
+      for (const cfg of scene.portals) {
+        const dest = SCENES[cfg.to];
+        if (!dest) continue;
+        if (!dest.voxelData && dest.voxel !== "embedded") {
+          this._loadVoxel(dest).catch(() => {
+          });
+        }
+        try {
+          const a = dest.gsplatAsset || this.app.assets.get(dest.gsplatId);
+          if (a && !a.resource && !a.loading) this.app.assets.load(a);
+        } catch (e) {
+        }
+      }
+    }
     async switchTo(i, spawnAt = null) {
       if (this._busy) {
         this._queued = { i, spawnAt };
@@ -3282,13 +3509,13 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           s._npcs.reset();
           s._npcs.floorRange = scene.npcFloorY || null;
         }
-        if (s._director) s._director._showBanner(`TELEPORTING \u2192 ${scene.name.toUpperCase()}\u2026`, 3);
+        await this._fade(1, 130);
         const v2 = await this._loadVoxel(scene);
         this._applyCollision(v2.meta, v2.nodes, v2.leafData);
         const splat = this.app.root.findByName("University 3");
         if (splat) {
           splat.setEulerAngles(scene.rot[0], scene.rot[1], scene.rot[2]);
-          const asset = this.app.assets.get(scene.gsplatId);
+          const asset = scene.gsplatAsset || this.app.assets.get(scene.gsplatId);
           if (asset) {
             if (!asset.resource && !asset.loading) this.app.assets.load(asset);
             splat.gsplat.asset = asset;
@@ -3322,6 +3549,12 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           z: col.gridMinZ + col.numVoxelsZ * col.voxelResolution * 0.5
         };
         this.walkCamera.position.set(sp.x, sp.y, sp.z);
+        if (scene.faceTarget) {
+          const fdx = scene.faceTarget.x - sp.x;
+          const fdz = scene.faceTarget.z - sp.z;
+          const yaw = Math.atan2(-fdx, -fdz) * 180 / Math.PI;
+          this.walkCamera.angles.set(0, yaw, 0);
+        }
         this.controller.onEnter(this.walkCamera);
         s._flyMode = false;
         const d2 = s._director;
@@ -3338,14 +3571,19 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           }
         }
         this._buildPortals(scene);
-        if (this._select) this._select.value = String(i);
+        this._prefetchDestinations(scene);
+        this._setActive(i);
         this.current = i;
+        setTimeout(() => this._maybeCapture(), 1800);
         console.log("sceneManager: switched to", scene.name);
       } catch (e) {
         console.error("sceneManager switch failed", e);
       }
+      await new Promise((r) => setTimeout(r, 140));
+      this._fade(0, 300);
       if (s._npcs) s._npcs.suspended = false;
       this._busy = false;
+      if (s._net && s._net.enabled) s._net.sendStateNow();
       const canvas = this.app.graphicsDevice.canvas;
       if (canvas) canvas.requestPointerLock();
       if (this._queued) {
@@ -3355,7 +3593,788 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       }
     }
   };
-  var THEME_BG = "#0d1117";
+  var UI_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+:root{
+  --background:#09090b; --foreground:#fafafa;
+  --card:rgba(9,9,11,0.92); --border:#27272a; --input:#27272a;
+  --muted:#27272a; --muted-fg:#a1a1aa;
+  --primary:#fafafa; --primary-fg:#18181b;
+  --destructive:#ef4444; --ring:#d4d4d8;
+  --ok:#34d399; --info:#60a5fa; --warn:#fbbf24;
+  --radius:8px; --radius-md:6px; --radius-sm:4px;
+  --font:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+.sg{font-family:var(--font);color:var(--foreground);font-feature-settings:'tnum';}
+.sg-mono{font-family:var(--font);font-variant-numeric:tabular-nums;}
+.sg-h{font-weight:600;letter-spacing:-0.01em;}
+.sg-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 1px 2px rgba(0,0,0,0.4);}
+.sg-chip{display:inline-flex;align-items:center;padding:1px 8px;border-radius:9999px;font-size:10px;font-weight:600;border:1px solid var(--border);background:transparent;}
+.sg-chip.safe{color:var(--ok);border-color:rgba(52,211,153,0.35);}
+.sg-chip.combat{color:var(--destructive);border-color:rgba(239,68,68,0.35);}
+.sg-chip.drop{color:var(--info);border-color:rgba(96,165,250,0.35);}
+.sg-btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 18px;border-radius:var(--radius-md);background:var(--primary);color:var(--primary-fg);font-size:13px;font-weight:600;border:none;cursor:pointer;transition:opacity 0.15s;}
+.sg-btn:hover{opacity:0.9;}
+.sg-sep{height:1px;background:var(--border);}
+#sg-sidebar{position:fixed;top:16px;right:16px;bottom:16px;width:256px;z-index:10007;display:flex;flex-direction:column;padding:16px;gap:12px;overflow:hidden;transition:transform 0.2s ease,opacity 0.2s ease;}
+#sg-sidebar.hidden{transform:translateX(300px);opacity:0;pointer-events:none;}
+#sg-sidebar h3{margin:0;font-size:13px;font-weight:600;letter-spacing:-0.01em;color:var(--foreground);display:flex;justify-content:space-between;align-items:baseline;}
+#sg-sidebar h3 span{color:var(--muted-fg);font-weight:400;font-size:11px;}
+#sg-cards{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:2px;}
+#sg-cards::-webkit-scrollbar{width:4px;} #sg-cards::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.sg-card{border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden;cursor:pointer;background:rgba(255,255,255,0.02);transition:border-color 0.15s,box-shadow 0.15s;flex-shrink:0;}
+.sg-card:hover{border-color:#3f3f46;}
+.sg-card.active{border-color:var(--ring);box-shadow:0 0 0 1px var(--ring);}
+.sg-thumb{width:100%;height:92px;object-fit:cover;display:block;background:#18181b;}
+.sg-thumb-ph{width:100%;height:92px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;letter-spacing:2px;color:#52525b;background:#18181b;}
+.sg-card-row{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;font-size:12px;font-weight:500;}
+#sg-dropzone,#sg-requisition{border:1px dashed #3f3f46;border-radius:var(--radius-md);padding:14px 10px;text-align:center;font-size:11px;color:var(--muted-fg);cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;flex-shrink:0;}
+#sg-dropzone:hover,#sg-dropzone.over,#sg-requisition:hover{border-color:var(--ring);color:var(--foreground);background:rgba(255,255,255,0.03);}
+.fs-reticle{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;z-index:9998;pointer-events:none;border-radius:9999px;background:rgba(250,250,250,0.9);box-shadow:0 0 0 1px rgba(9,9,11,0.6);}
+.sg-progress{height:8px;border-radius:9999px;background:var(--muted);overflow:hidden;}
+.sg-progress>div{height:100%;border-radius:9999px;background:var(--primary);transition:width 0.15s;}
+`;
+  function injectUiCss() {
+    if (document.getElementById("sg-css")) return;
+    const st = document.createElement("style");
+    st.id = "sg-css";
+    st.textContent = UI_CSS;
+    document.head ? document.head.appendChild(st) : document.body.appendChild(st);
+  }
+  async function unzip(buffer) {
+    const u8 = new Uint8Array(buffer);
+    const dv = new DataView(buffer);
+    let eocd = -1;
+    for (let i = u8.length - 22; i >= Math.max(0, u8.length - 22 - 65535); i--) {
+      if (dv.getUint32(i, true) === 101010256) {
+        eocd = i;
+        break;
+      }
+    }
+    if (eocd < 0) throw new Error("not a zip file");
+    const count = dv.getUint16(eocd + 10, true);
+    let off = dv.getUint32(eocd + 16, true);
+    const out2 = [];
+    const td = new TextDecoder();
+    for (let n = 0; n < count; n++) {
+      if (dv.getUint32(off, true) !== 33639248) break;
+      const method = dv.getUint16(off + 10, true);
+      const compSize = dv.getUint32(off + 20, true);
+      const nameLen = dv.getUint16(off + 28, true);
+      const extraLen = dv.getUint16(off + 30, true);
+      const commentLen = dv.getUint16(off + 32, true);
+      const localOff = dv.getUint32(off + 42, true);
+      const name = td.decode(u8.subarray(off + 46, off + 46 + nameLen));
+      off += 46 + nameLen + extraLen + commentLen;
+      if (name.endsWith("/")) continue;
+      const lNameLen = dv.getUint16(localOff + 26, true);
+      const lExtraLen = dv.getUint16(localOff + 28, true);
+      const dataStart = localOff + 30 + lNameLen + lExtraLen;
+      const comp = u8.subarray(dataStart, dataStart + compSize);
+      let data;
+      if (method === 0) {
+        data = comp.slice();
+      } else if (method === 8) {
+        const stream = new Blob([comp.slice()]).stream().pipeThrough(new globalThis.DecompressionStream("deflate-raw"));
+        data = new Uint8Array(await new Response(stream).arrayBuffer());
+      } else {
+        continue;
+      }
+      out2.push({ name, data });
+    }
+    return out2;
+  }
+  var DropSystem = class {
+    constructor(app, script) {
+      __publicField(this, "app");
+      __publicField(this, "script");
+      __publicField(this, "_dropCount", 0);
+      this.app = app;
+      this.script = script;
+      window.addEventListener("dragover", (e) => e.preventDefault());
+      window.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) this._import(f);
+      });
+    }
+    _banner(text, secs) {
+      const d2 = this.script._director;
+      if (d2) d2._showBanner(text, secs);
+      console.log("[drop]", text);
+    }
+    async _import(file) {
+      try {
+        if (!/\.zip$/i.test(file.name)) {
+          this._banner("DROP A .ZIP (sog + voxel json/bin)", 4);
+          return;
+        }
+        this._banner(`IMPORTING ${file.name.toUpperCase()}\u2026`, 8);
+        const entries = await unzip(await file.arrayBuffer());
+        let sog = null, metaEntry = null, bin = null;
+        const td = new TextDecoder();
+        for (const en of entries) {
+          const base = en.name.split("/").pop() || en.name;
+          if (/\.sog$/i.test(base)) sog = en;
+          else if (/\.bin$/i.test(base)) bin = en;
+          else if (/\.json$/i.test(base)) {
+            try {
+              const j = JSON.parse(td.decode(en.data));
+              if (j.gridBounds && j.nodeCount) {
+                metaEntry = en;
+                en.meta = j;
+              }
+            } catch (err) {
+            }
+          }
+        }
+        if (!sog || !metaEntry || !bin) {
+          this._banner("ZIP NEEDS: .sog + voxel .json + voxel .bin", 5);
+          return;
+        }
+        const meta = metaEntry.meta;
+        const view = new Uint32Array(bin.data.buffer, bin.data.byteOffset, Math.floor(bin.data.length / 4));
+        const nodes = view.slice(0, meta.nodeCount);
+        const leafData = view.slice(meta.nodeCount, meta.nodeCount + meta.leafDataCount);
+        const blobUrl = URL.createObjectURL(new Blob([sog.data], { type: "application/zip" }));
+        const asset = new pc.Asset(`drop-${++this._dropCount}.sog`, "gsplat", { url: blobUrl, filename: "drop.sog" });
+        this.app.assets.add(asset);
+        const sceneName = file.name.replace(/\.zip$/i, "").replace(/[-_]+/g, " ").trim().slice(0, 24) || "dropped scan";
+        const scenes = this.script._scenes;
+        const idx = SCENES.length;
+        SCENES.push({
+          name: sceneName,
+          gsplatAsset: asset,
+          voxelData: { meta, nodes, leafData },
+          spawn: null,
+          rot: [0, 0, 180]
+        });
+        if (scenes) scenes.addCard(idx);
+        this._banner(`SCAN READY \u2014 ENTERING ${sceneName.toUpperCase()}`, 4);
+        if (scenes) scenes.switchTo(idx);
+      } catch (e) {
+        console.error("drop import failed", e);
+        this._banner("IMPORT FAILED: " + (e && e.message || e), 5);
+      }
+    }
+  };
+  var PARTY_URL = "wss://roland-obligations-futures-collections.trycloudflare.com";
+  var RELAY_URL_ASSET = [298997427, "relay-url.json"];
+  var NET_SEND_INTERVAL = 1 / 12;
+  var NetSystem = class {
+    constructor(app, script, refs) {
+      __publicField(this, "app");
+      __publicField(this, "script");
+      __publicField(this, "npcs");
+      __publicField(this, "balls");
+      __publicField(this, "scenes");
+      __publicField(this, "director");
+      __publicField(this, "walkCamera");
+      __publicField(this, "enabled", false);
+      __publicField(this, "ws", null);
+      __publicField(this, "myId", "");
+      __publicField(this, "myName", "");
+      __publicField(this, "room", "hack6");
+      __publicField(this, "peers", /* @__PURE__ */ new Map());
+      __publicField(this, "_sendT", 0);
+      __publicField(this, "_retry", 0);
+      __publicField(this, "_destroyed", false);
+      __publicField(this, "_screenPos", null);
+      __publicField(this, "_url", "");
+      __publicField(this, "_resolveUrl", null);
+      this.app = app;
+      this.script = script;
+      this.npcs = refs.npcs;
+      this.balls = refs.balls;
+      this.scenes = refs.scenes;
+      this.director = refs.director;
+      this.walkCamera = refs.walkCamera;
+      let param = "";
+      try {
+        const q = new URLSearchParams(window.location.search);
+        param = q.get("party") || "";
+        this.room = q.get("room") || "hack6";
+      } catch (e) {
+      }
+      const finish = (base) => {
+        if (!base) {
+          console.log("net: multiplayer off (no relay url)");
+          return;
+        }
+        base = base.replace(/^http/, "ws").replace(/\/+$/, "");
+        this._url = `${base}/parties/main/${encodeURIComponent(this.room)}`;
+        this._connect();
+      };
+      if (param) {
+        this._resolveUrl = () => finish(param);
+      } else {
+        this._resolveUrl = async () => {
+          let base = PARTY_URL;
+          try {
+            const cfg = window.config;
+            const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
+            const r = await fetch(`${window.location.origin}/api/assets/${RELAY_URL_ASSET[0]}/file/${RELAY_URL_ASSET[1]}?branchId=${bid}`);
+            if (r.ok) {
+              const j = await r.json();
+              if (j && j.url) base = j.url;
+            }
+          } catch (e) {
+          }
+          finish(base);
+        };
+      }
+      try {
+        this.myName = localStorage.getItem("siege-name") || "";
+      } catch (e) {
+      }
+      if (!this.myName) {
+        try {
+          this.myName = (window.prompt("Player name for multiplayer:", "player") || "player").slice(0, 16);
+          localStorage.setItem("siege-name", this.myName);
+        } catch (e) {
+          this.myName = "player" + Math.floor(Math.random() * 1e3);
+        }
+      }
+      this.enabled = true;
+      this._screenPos = new pc.Vec3();
+      this._resolveUrl();
+    }
+    _connect() {
+      if (this._destroyed || !this._url) return;
+      try {
+        const ws = new WebSocket(this._url);
+        this.ws = ws;
+        ws.onopen = () => {
+          this._retry = 0;
+          console.log("net: connected to", this._url, "as", this.myName);
+          this.sendStateNow();
+        };
+        ws.onmessage = (ev) => {
+          try {
+            this._onMsg(JSON.parse(ev.data));
+          } catch (e) {
+          }
+        };
+        ws.onclose = () => {
+          this.ws = null;
+          if (this._destroyed) return;
+          const wait = Math.min(1e4, 1500 * ++this._retry);
+          setTimeout(() => this._connect(), wait);
+        };
+        ws.onerror = () => {
+          try {
+            ws.close();
+          } catch (e) {
+          }
+        };
+      } catch (e) {
+        console.warn("net: connect failed", e);
+      }
+    }
+    _send(obj) {
+      if (this.ws && this.ws.readyState === 1) {
+        try {
+          this.ws.send(JSON.stringify(obj));
+        } catch (e) {
+        }
+      }
+    }
+    sendStateNow() {
+      if (!this.enabled) return;
+      const p = this.walkCamera.position;
+      const a = this.walkCamera.angles;
+      this._send({
+        t: "state",
+        name: this.myName,
+        scene: this.scenes ? this.scenes.current : 0,
+        x: +p.x.toFixed(3),
+        y: +p.y.toFixed(3),
+        z: +p.z.toFixed(3),
+        yaw: +a.y.toFixed(1),
+        pitch: +a.x.toFixed(1),
+        crouch: !!this.script._crouched
+      });
+    }
+    sendShot(ox, oy, oz, dx, dy, dz) {
+      this._send({
+        t: "shoot",
+        scene: this.scenes ? this.scenes.current : 0,
+        ox: +ox.toFixed(3),
+        oy: +oy.toFixed(3),
+        oz: +oz.toFixed(3),
+        dx: +dx.toFixed(4),
+        dy: +dy.toFixed(4),
+        dz: +dz.toFixed(4)
+      });
+    }
+    _onMsg(m) {
+      if (m.t === "hello") {
+        this.myId = m.id;
+        return;
+      }
+      if (m.t === "leave") {
+        const peer = this.peers.get(m.id);
+        if (peer) {
+          if (peer.ent) {
+            try {
+              peer.ent.destroy();
+            } catch (e) {
+            }
+          }
+          if (peer.el) peer.el.remove();
+          if (this.director) this.director._feedMsg(`${peer.name || "player"} left`);
+          this.peers.delete(m.id);
+          this._syncOnline();
+        }
+        return;
+      }
+      if (m.t === "state") {
+        let peer = this.peers.get(m.id);
+        if (!peer) {
+          peer = { name: m.name, scene: m.scene, cur: null, prev: null, t: 0, ent: null, model: null, el: null, animState: "" };
+          this.peers.set(m.id, peer);
+          if (this.director) this.director._feedMsg(`${m.name || "player"} joined`);
+          this._syncOnline();
+        }
+        peer.name = m.name || peer.name;
+        peer.scene = m.scene;
+        peer.prev = peer.cur || { x: m.x, y: m.y, z: m.z, yaw: m.yaw, crouch: m.crouch };
+        peer.cur = { x: m.x, y: m.y, z: m.z, yaw: m.yaw, crouch: m.crouch };
+        peer.t = 0;
+        return;
+      }
+      if (m.t === "shoot") {
+        if (this.scenes && m.scene !== this.scenes.current) return;
+        if (this.balls) {
+          this.balls.throwBall({ x: m.ox, y: m.oy, z: m.oz }, { x: m.dx, y: m.dy, z: m.dz }, VM_BALL_SPEED, VM_BALL_RADIUS);
+        }
+        return;
+      }
+    }
+    _syncOnline() {
+      if (this.director) {
+        this.director.online = this.peers.size + 1;
+        this.director._syncHud();
+      }
+    }
+    _ensureAvatar(peer) {
+      if (peer.ent || !this.npcs || !this.npcs.ready || !this.npcs.assets.model) return;
+      try {
+        const root = new pc.Entity("net-player");
+        const model = this.npcs.assets.model.resource.instantiateRenderEntity();
+        root.addChild(model);
+        this.app.root.addChild(root);
+        for (const r of model.findComponents("render")) {
+          for (const mi of r.meshInstances) mi.cull = false;
+        }
+        const s = this.npcs.npcHeight / 180;
+        model.setLocalScale(s, s, s);
+        model.setLocalEulerAngles(0, 180, 0);
+        model.addComponent("anim", { activate: true });
+        const idle = this.npcs._track("idle");
+        const walk = this.npcs._track("walk");
+        if (idle) model.anim.assignAnimation("Idle", idle);
+        if (walk) model.anim.assignAnimation("Walk", walk);
+        peer.ent = root;
+        peer.model = model;
+        const el = document.createElement("div");
+        el.className = "sg sg-mono";
+        el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:var(--info);border:1px solid rgba(96,165,250,0.4);";
+        el.textContent = peer.name || "player";
+        document.body.appendChild(el);
+        peer.el = el;
+      } catch (e) {
+        console.warn("net: avatar failed", e);
+      }
+    }
+    _setPeerAnim(peer, state) {
+      if (peer.animState === state || !peer.model || !peer.model.anim) return;
+      try {
+        if (peer.model.anim.baseLayer) {
+          peer.model.anim.baseLayer.transition(state, 0.2);
+          peer.animState = state;
+        }
+      } catch (e) {
+      }
+    }
+    step(dt) {
+      if (!this.enabled) return;
+      this._sendT -= dt;
+      if (this._sendT <= 0) {
+        this._sendT = NET_SEND_INTERVAL;
+        this.sendStateNow();
+      }
+      const camComp = this.script.entity.camera;
+      const canvas = this.app.graphicsDevice.canvas;
+      for (const peer of this.peers.values()) {
+        if (!peer.cur) continue;
+        this._ensureAvatar(peer);
+        if (!peer.ent) continue;
+        const sameScene = !this.scenes || peer.scene === this.scenes.current;
+        peer.ent.enabled = sameScene;
+        if (!sameScene) {
+          if (peer.el) peer.el.style.display = "none";
+          continue;
+        }
+        peer.t += dt;
+        const alpha = Math.min(1, peer.t / NET_SEND_INTERVAL);
+        const a = peer.prev || peer.cur, b = peer.cur;
+        const x = a.x + (b.x - a.x) * alpha;
+        const y = a.y + (b.y - a.y) * alpha;
+        const z = a.z + (b.z - a.z) * alpha;
+        let dyaw = b.yaw - a.yaw;
+        while (dyaw > 180) dyaw -= 360;
+        while (dyaw < -180) dyaw += 360;
+        const yaw = a.yaw + dyaw * alpha;
+        const floorY = y - (b.crouch ? 0.95 : 1.5);
+        peer.ent.setPosition(x, floorY, z);
+        peer.ent.setEulerAngles(0, yaw, 0);
+        if (peer.model) {
+          const s = this.npcs.npcHeight / 180;
+          peer.model.setLocalScale(s, b.crouch ? s * 0.72 : s, s);
+        }
+        const spd = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / NET_SEND_INTERVAL;
+        this._setPeerAnim(peer, spd > 0.3 ? "Walk" : "Idle");
+        if (peer.el && camComp && canvas) {
+          camComp.worldToScreen(new pc.Vec3(x, floorY + (this.npcs ? this.npcs.npcHeight : 1.7) + 0.15, z), this._screenPos);
+          if (this._screenPos.z < 0) {
+            peer.el.style.display = "none";
+          } else {
+            peer.el.style.display = "block";
+            peer.el.style.left = `${this._screenPos.x * (canvas.clientWidth / canvas.width)}px`;
+            peer.el.style.top = `${this._screenPos.y * (canvas.clientHeight / canvas.height)}px`;
+          }
+        }
+      }
+    }
+  };
+  var FRIENDS = [
+    { name: "Larry", assetId: 298997648, fname: "friend-larry.glb" },
+    { name: "Aditya", assetId: 298997653, fname: "friend-aditya.glb" },
+    { name: "Akash", assetId: 298998118, fname: "friend-akash.glb" },
+    { name: "Kelly", assetId: 298998127, fname: "friend-kelly.glb" }
+  ];
+  var FRIEND_HEIGHT = 1.72;
+  var FRIEND_SPEED = 1;
+  var FriendSystem = class {
+    constructor(app, collision, npcs) {
+      __publicField(this, "app");
+      __publicField(this, "collision");
+      __publicField(this, "npcs");
+      // reused for floor-spot search + camera ref
+      __publicField(this, "scenes");
+      __publicField(this, "friends", []);
+      __publicField(this, "_lastScene", -1);
+      __publicField(this, "_screenPos");
+      this.app = app;
+      this.collision = collision;
+      this.npcs = npcs;
+      this._screenPos = new pc.Vec3();
+      for (const cfg of FRIENDS) this._load(cfg);
+    }
+    _url(id, fname) {
+      let q = "";
+      try {
+        const cfg = window.config;
+        const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
+        q = `?branchId=${bid}`;
+      } catch (e) {
+      }
+      return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+    }
+    _load(cfg) {
+      const asset = new pc.Asset(cfg.fname, "container", { url: this._url(cfg.assetId, cfg.fname), filename: cfg.fname });
+      asset.on("load", () => {
+        cfg.asset = asset;
+        this._spawn(cfg);
+      });
+      asset.on("error", (err) => console.error("friend asset failed:", cfg.name, err));
+      this.app.assets.add(asset);
+      this.app.assets.load(asset);
+    }
+    _spawn(cfg) {
+      const sc = this.scenes ? SCENES[this.scenes.current] : null;
+      if (sc && sc.noNpcs) return;
+      try {
+        const spot = this.npcs._randomFloorSpot();
+        if (!spot) {
+          setTimeout(() => this._spawn(cfg), 2500);
+          return;
+        }
+        const root = new pc.Entity("friend-" + cfg.name);
+        const model = cfg.asset.resource.instantiateRenderEntity();
+        root.addChild(model);
+        this.app.root.addChild(root);
+        for (const r of model.findComponents("render")) {
+          for (const mi of r.meshInstances) mi.cull = false;
+        }
+        model.setLocalEulerAngles(0, 180, 0);
+        const anims = cfg.asset.resource.animations;
+        if (anims && anims.length) {
+          model.addComponent("anim", { activate: true });
+          model.anim.assignAnimation("Walk", anims[0].resource);
+        }
+        root.setPosition(spot.x, spot.y, spot.z);
+        const el = document.createElement("div");
+        el.className = "sg sg-mono";
+        el.style.cssText = "position:fixed;transform:translate(-50%,-100%);z-index:9997;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:var(--ok);border:1px solid rgba(52,211,153,0.4);";
+        el.textContent = cfg.name;
+        document.body.appendChild(el);
+        this.friends.push({
+          cfg,
+          root,
+          model,
+          el,
+          p: { x: spot.x, y: spot.y, z: spot.z },
+          target: null,
+          static: !!cfg.generated,
+          // T-pose units stand at attention
+          yaw: Math.random() * 360,
+          fit: { phase: "scale", wait: 4 },
+          _push: { x: 0, y: 0, z: 0 }
+        });
+      } catch (e) {
+        console.warn("friend spawn failed", cfg.name, e);
+      }
+    }
+    _measure(model) {
+      let minY = Infinity, maxY = -Infinity, cx = 0, cz = 0, n = 0;
+      const stack = [model];
+      while (stack.length) {
+        const nd = stack.pop();
+        const ch = nd.children;
+        for (let i = 0; i < ch.length; i++) stack.push(ch[i]);
+        const pos = nd.getPosition();
+        if (!isFinite(pos.y)) continue;
+        minY = Math.min(minY, pos.y);
+        maxY = Math.max(maxY, pos.y);
+        cx += pos.x;
+        cz += pos.z;
+        n++;
+      }
+      if (n < 3) return null;
+      return { minY, ext: maxY - minY, cx: cx / n, cz: cz / n };
+    }
+    /** spawn a freshly generated (T-pose, unrigged) unit near the player */
+    spawnGenerated(name, asset) {
+      const cfg = { name, asset, generated: true };
+      FRIENDS.push(cfg);
+      this._spawn(cfg);
+    }
+    /** respawn everyone when the location changes */
+    resetForScene() {
+      for (const f of this.friends) {
+        try {
+          f.root.destroy();
+        } catch (e) {
+        }
+        if (f.el) f.el.remove();
+      }
+      this.friends.length = 0;
+      const sc = this.scenes ? SCENES[this.scenes.current] : null;
+      if (sc && sc.noNpcs) return;
+      for (const cfg of FRIENDS) {
+        if (cfg.asset) this._spawn(cfg);
+      }
+    }
+    step(dt) {
+      if (this.scenes && this.scenes.current !== this._lastScene) {
+        this._lastScene = this.scenes.current;
+        this.resetForScene();
+      }
+      const camComp = this.npcs.cameraEntity.camera;
+      const canvas = this.app.graphicsDevice.canvas;
+      for (const f of this.friends) {
+        if (f.fit) {
+          if (f.fit.wait > 0) {
+            f.fit.wait--;
+            continue;
+          }
+          const m = this._measure(f.model);
+          if (!m || !isFinite(m.ext) || m.ext <= 0.05) {
+            f.fit.wait = 4;
+            continue;
+          }
+          if (f.fit.phase === "scale") {
+            const cur = f.model.getLocalScale().x;
+            let s = cur * (FRIEND_HEIGHT * 0.95 / m.ext);
+            if (!isFinite(s) || s < 5e-4 || s > 10) s = 1;
+            f.model.setLocalScale(s, s, s);
+            f.fit.phase = "ground";
+            f.fit.wait = 3;
+          } else {
+            const dy = f.p.y - m.minY;
+            if (isFinite(dy) && Math.abs(dy) < 50) {
+              const lp = f.model.getLocalPosition();
+              f.model.setLocalPosition(lp.x, lp.y + dy, lp.z);
+            }
+            f.fit = null;
+          }
+          continue;
+        }
+        if (f.static) {
+          const pp = this.npcs._playerPos();
+          const fdx = pp.x - f.p.x, fdz = pp.z - f.p.z;
+          const fd = Math.sqrt(fdx * fdx + fdz * fdz);
+          if (fd > 0.5) {
+            const targetYaw = Math.atan2(-fdx / fd, -fdz / fd) * 180 / Math.PI;
+            let dyaw = targetYaw - f.yaw;
+            while (dyaw > 180) dyaw -= 360;
+            while (dyaw < -180) dyaw += 360;
+            f.yaw += Math.max(-120 * dt, Math.min(120 * dt, dyaw));
+          }
+          f.root.setPosition(f.p.x, f.p.y, f.p.z);
+          f.root.setEulerAngles(0, f.yaw, 0);
+        } else if (!f.target) {
+          const spot = this.npcs._randomFloorSpot();
+          if (spot) f.target = spot;
+        }
+        if (f.target) {
+          const dx = f.target.x - f.p.x;
+          const dz = f.target.z - f.p.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < 0.5) {
+            f.target = null;
+          } else {
+            const nx = dx / dist, nz = dz / dist;
+            f.p.x += nx * FRIEND_SPEED * dt;
+            f.p.z += nz * FRIEND_SPEED * dt;
+            const targetYaw = Math.atan2(-nx, -nz) * 180 / Math.PI;
+            let dyaw = targetYaw - f.yaw;
+            while (dyaw > 180) dyaw -= 360;
+            while (dyaw < -180) dyaw += 360;
+            f.yaw += Math.max(-240 * dt, Math.min(240 * dt, dyaw));
+            const down = this.collision.queryRay(f.p.x, f.p.y + 1.2, f.p.z, 0, -1, 0, 3);
+            if (down) f.p.y += (down.y - f.p.y) * Math.min(1, dt * 10);
+            const cy = f.p.y + FRIEND_HEIGHT * 0.5;
+            if (this.collision.queryCapsule(f.p.x, cy, f.p.z, FRIEND_HEIGHT * 0.5 - 0.3, 0.3, f._push)) {
+              f.p.x += f._push.x;
+              f.p.z += f._push.z;
+              if (Math.abs(f._push.x) + Math.abs(f._push.z) > 0.03) f.target = null;
+            }
+          }
+        }
+        f.root.setPosition(f.p.x, f.p.y, f.p.z);
+        f.root.setEulerAngles(0, f.yaw, 0);
+        if (f.el && camComp && canvas) {
+          camComp.worldToScreen(new pc.Vec3(f.p.x, f.p.y + FRIEND_HEIGHT + 0.15, f.p.z), this._screenPos);
+          if (this._screenPos.z < 0) {
+            f.el.style.display = "none";
+          } else {
+            f.el.style.display = "block";
+            f.el.style.left = `${this._screenPos.x * (canvas.clientWidth / canvas.width)}px`;
+            f.el.style.top = `${this._screenPos.y * (canvas.clientHeight / canvas.height)}px`;
+          }
+        }
+      }
+    }
+  };
+  var NPC_PIPELINE_URL = "http://localhost:8799";
+  var RequisitionSystem = class {
+    constructor(app, script) {
+      __publicField(this, "app");
+      __publicField(this, "script");
+      __publicField(this, "base");
+      __publicField(this, "_cardStatus", null);
+      this.app = app;
+      this.script = script;
+      let base = NPC_PIPELINE_URL;
+      try {
+        const q = new URLSearchParams(window.location.search);
+        base = q.get("npc") || base;
+      } catch (e) {
+      }
+      this.base = base.replace(/\/+$/, "");
+    }
+    /** sidebar hook: build the "requisition" card */
+    makeCard(container) {
+      const card = document.createElement("div");
+      card.id = "sg-requisition";
+      card.style.cssText = "";
+      card.innerHTML = '<span style="color:var(--foreground);font-weight:500">Create an NPC</span><br><span style="font-size:10px">photos of a person become a unit</span>';
+      const status = document.createElement("div");
+      status.style.cssText = "font-size:10px;margin-top:6px;color:#93c5fd;display:none;";
+      card.appendChild(status);
+      this._cardStatus = status;
+      card.addEventListener("click", () => {
+        const inp = document.createElement("input");
+        inp.type = "file";
+        inp.accept = "image/*";
+        inp.multiple = true;
+        inp.onchange = () => {
+          const files = inp.files;
+          if (files && files.length) this.requisition(Array.from(files));
+        };
+        inp.click();
+      });
+      container.appendChild(card);
+    }
+    _status(text) {
+      if (this._cardStatus) {
+        this._cardStatus.style.display = "block";
+        this._cardStatus.textContent = text;
+      }
+      const d2 = this.script._director;
+      if (d2) d2._feedMsg(text);
+    }
+    async requisition(files) {
+      const name = (window.prompt("Name this unit:", "recruit") || "recruit").slice(0, 16);
+      try {
+        this._status(`${name}: uploading ${files.length} photo(s)\u2026`);
+        const fd = new FormData();
+        fd.append("name", name);
+        for (const f of files) fd.append("images", f);
+        const r = await fetch(`${this.base}/npc/generate`, { method: "POST", body: fd });
+        if (!r.ok) throw new Error(`server ${r.status}`);
+        const { job_id } = await r.json();
+        this._poll(job_id, name);
+      } catch (e) {
+        this._status(`${name}: pipeline offline (${e && e.message || e})`);
+      }
+    }
+    async _poll(jobId, name) {
+      try {
+        const r = await fetch(`${this.base}/npc/status/${jobId}`);
+        const st = await r.json();
+        if (st.status === "SUCCEEDED" || st.download_url) {
+          this._status(`${name}: downloading\u2026`);
+          const g = await fetch(`${this.base}/npc/download/${jobId}`);
+          if (!g.ok) throw new Error(`download ${g.status}`);
+          const blob = await g.blob();
+          this._materialize(name, blob);
+          return;
+        }
+        if (st.status === "FAILED" || st.error) {
+          this._status(`${name}: generation failed (${st.error || "unknown"})`);
+          return;
+        }
+        this._status(`${name}: ${st.stage || "generating"} ${st.progress != null ? st.progress + "%" : ""}`);
+        setTimeout(() => this._poll(jobId, name), 4e3);
+      } catch (e) {
+        this._status(`${name}: lost pipeline (${e && e.message || e})`);
+      }
+    }
+    _materialize(name, blob) {
+      try {
+        const url = URL.createObjectURL(blob);
+        const asset = new pc.Asset(`req-${name}.glb`, "container", { url, filename: "unit.glb" });
+        asset.on("load", () => {
+          const friends = this.script._friends;
+          if (friends) {
+            friends.spawnGenerated(name, asset);
+            this._status(`${name}: unit deployed \u2713`);
+          } else {
+            this._status(`${name}: no friend system`);
+          }
+        });
+        asset.on("error", (err) => this._status(`${name}: model failed (${err})`));
+        this.app.assets.add(asset);
+        this.app.assets.load(asset);
+      } catch (e) {
+        this._status(`${name}: materialize failed`);
+      }
+    }
+  };
   var WAVE_INTERMISSION = 5;
   var PLAYER_MAX_HP = 100;
   var HP_REGEN_DELAY = 5;
@@ -3403,15 +4422,26 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         document.body.appendChild(d2);
         return d2;
       };
-      this._overlay = mk(`position:fixed;inset:0;z-index:10005;display:flex;flex-direction:column;align-items:center;justify-content:center;background:${THEME_BG}f2;color:#fff;font-family:Georgia,serif;text-align:center;cursor:pointer;`);
-      this._banner = mk("position:fixed;top:18%;left:50%;transform:translateX(-50%);z-index:10004;display:none;background:rgba(13,17,23,0.92);border:2px solid #e63946;color:#fff;font:bold 20px Georgia,serif;padding:12px 34px;border-radius:4px;letter-spacing:2px;white-space:nowrap;");
-      this._hud = mk(`position:fixed;top:14px;left:14px;z-index:10001;color:#fff;font:bold 16px monospace;text-shadow:0 1px 3px rgba(0,0,0,0.9);pointer-events:none;background:rgba(13,17,23,0.6);padding:8px 14px;border-radius:6px;border-left:4px solid #e63946;`);
-      this._feed = mk("position:fixed;top:96px;left:14px;z-index:10001;color:#ffd;font:12px monospace;text-shadow:0 1px 2px #000;pointer-events:none;");
-      const hpWrap = mk("position:fixed;bottom:26px;left:26px;z-index:10001;width:220px;height:18px;background:rgba(0,0,0,0.55);border:2px solid #fff;border-radius:4px;pointer-events:none;");
+      injectUiCss();
+      this._overlay = mk("position:fixed;inset:0;z-index:10005;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(9,9,11,0.94);color:var(--foreground);text-align:center;cursor:pointer;");
+      this._overlay.className = "sg";
+      this._banner = mk("position:fixed;top:14%;left:50%;transform:translateX(-50%);z-index:10004;display:none;padding:12px 28px;font-size:13px;font-weight:600;letter-spacing:0.04em;white-space:nowrap;");
+      this._banner.className = "sg sg-panel";
+      this._hud = mk("position:fixed;top:16px;left:16px;z-index:10001;pointer-events:none;padding:10px 16px;min-width:180px;");
+      this._hud.className = "sg sg-panel";
+      this._feed = mk("position:fixed;top:112px;left:16px;z-index:10001;pointer-events:none;font-family:var(--font);font-size:11px;color:var(--muted-fg);display:flex;flex-direction:column;gap:3px;");
+      this._feed.className = "sg sg-mono";
+      const hpWrap = mk("position:fixed;bottom:20px;left:16px;z-index:10001;width:230px;padding:10px 14px;pointer-events:none;");
+      hpWrap.className = "sg sg-panel";
+      hpWrap.innerHTML = '<div style="font-size:11px;font-weight:500;color:var(--muted-fg);margin-bottom:6px;display:flex;justify-content:space-between"><span>Health</span></div>';
+      const hpBar = document.createElement("div");
+      hpBar.className = "sg-progress";
+      hpBar.style.cssText = "width:188px;";
       this._hpFill = document.createElement("div");
-      this._hpFill.style.cssText = "height:100%;width:100%;background:linear-gradient(90deg,#e63946,#ffb4a2);border-radius:2px;transition:width 0.15s;";
-      hpWrap.appendChild(this._hpFill);
-      this._vignette = mk("position:fixed;inset:0;z-index:10000;pointer-events:none;background:radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,0.55) 100%);opacity:0;transition:opacity 0.12s;");
+      this._hpFill.style.cssText = "height:100%;width:100%;border-radius:9999px;background:var(--primary);transition:width 0.15s,background 0.15s;";
+      hpBar.appendChild(this._hpFill);
+      hpWrap.appendChild(hpBar);
+      this._vignette = mk("position:fixed;inset:0;z-index:10000;pointer-events:none;background:radial-gradient(ellipse at center, transparent 55%, rgba(200,30,40,0.5) 100%);opacity:0;transition:opacity 0.12s;");
       this._overlay.addEventListener("click", () => {
         if (this.state === "title") this._start();
         else if (this.state === "gameover") this._restart();
@@ -3456,7 +4486,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     _showTitle() {
       this.state = "title";
       this._overlay.style.display = "flex";
-      this._overlay.innerHTML = '<div style="font-size:60px;font-weight:bold;letter-spacing:10px;margin:10px 0;color:#e63946">SIEGE</div><div style="font-size:13px;letter-spacing:4px;opacity:0.7;margin-bottom:30px">HOLD THE HALLWAY</div><div style="font:13px monospace;line-height:1.9;opacity:0.9">WASD move \xB7 mouse look \xB7 LMB fire ball cannon \xB7 R reload<br>Space jump \xB7 Shift run \xB7 F respawn \xB7 Y fly \xB7 X label \xB7 V remove</div><div style="margin-top:32px;font:bold 16px monospace;animation:pulse 1.2s infinite">CLICK TO START</div><div style="margin-top:14px;font:13px monospace;opacity:0.7">press T for target practice</div><style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}</style>';
+      this._overlay.innerHTML = '<div style="font-size:12px;font-weight:500;color:var(--muted-fg);margin-bottom:16px">University of Toronto \xB7 43.6596\xB0 N, 79.3976\xB0 W</div><div style="font-size:72px;font-weight:700;letter-spacing:-0.03em;line-height:1;color:var(--foreground)">SIEGE</div><div style="font-size:14px;color:var(--muted-fg);margin:16px 0 36px;max-width:420px;line-height:1.6">Reality, scanned. Now defend it \u2014 a wave shooter inside real Gaussian-splat scans of campus.</div><div class="sg-panel" style="padding:14px 22px;font-size:12px;line-height:2.1;color:var(--muted-fg);text-align:left"><span style="color:var(--foreground);font-weight:500">WASD</span> move \xB7 <span style="color:var(--foreground);font-weight:500">Shift</span> run \xB7 <span style="color:var(--foreground);font-weight:500">Space</span> jump \xB7 <span style="color:var(--foreground);font-weight:500">C</span> crouch<br><span style="color:var(--foreground);font-weight:500">LMB</span> fire \xB7 <span style="color:var(--foreground);font-weight:500">R</span> reload \xB7 <span style="color:var(--foreground);font-weight:500">T</span> targets \xB7 <span style="color:var(--foreground);font-weight:500">M</span> locations \xB7 <span style="color:var(--foreground);font-weight:500">B</span> voxels</div><div class="sg-btn" style="margin-top:36px">Click to start</div><div style="margin-top:14px;font-size:11px;color:var(--muted-fg)">Drop a scan .zip anywhere \u2014 any room becomes a level</div>';
     }
     _start() {
       this.state = "playing";
@@ -3508,7 +4538,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     }
     _feedMsg(text) {
       const line = document.createElement("div");
-      line.textContent = text;
+      line.textContent = "\xBB " + text;
       this._feed.prepend(line);
       setTimeout(() => line.remove(), 4e3);
       while (this._feed.children.length > 4) this._feed.lastChild.remove();
@@ -3534,14 +4564,13 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this.npcs.playerDead = true;
       document.exitPointerLock();
       this._overlay.style.display = "flex";
-      this._overlay.innerHTML = `<div style="font-size:48px;font-weight:bold;letter-spacing:4px;color:#e63946">YOU DIED</div><div style="font:16px monospace;margin-top:22px;line-height:2">final score <b>${this.score}</b><br>waves survived <b>${this.wave}</b> \xB7 soldiers eliminated <b>${this.kills}</b></div><div style="margin-top:30px;font:bold 15px monospace;animation:pulse 1.2s infinite">CLICK TO RESTART</div>`;
+      this._overlay.innerHTML = `<div style="font-size:12px;font-weight:500;color:var(--destructive);margin-bottom:14px">Signal lost</div><div style="font-size:56px;font-weight:700;letter-spacing:-0.03em;color:var(--foreground)">Eliminated</div><div style="font-size:13px;color:var(--muted-fg);margin:22px 0 0" class="sg-mono">Score <b style="color:var(--foreground)">${this.score}</b> &nbsp;\xB7&nbsp; Waves <b style="color:var(--foreground)">${this.wave}</b> &nbsp;\xB7&nbsp; Kills <b style="color:var(--foreground)">${this.kills}</b></div><div class="sg-btn" style="margin-top:36px">Click to restart</div>`;
     }
     _syncHud() {
-      if (this.state === "practice") {
-        this._hud.innerHTML = `TARGET PRACTICE<br><span style="font-weight:normal">hits ${this.practiceHits} \xB7 score ${this.practiceHits * 50}</span>`;
-      } else {
-        this._hud.innerHTML = `SIEGE<br><span style="font-weight:normal">wave ${this.wave} \xB7 score ${this.score} \xB7 kills ${this.kills}</span>`;
-      }
+      const online = this.online > 1 ? ` &nbsp;\xB7&nbsp; Online <b style="color:var(--info)">${this.online}</b>` : "";
+      const title = this.state === "practice" ? "Target Practice" : "SIEGE";
+      const stats = this.state === "practice" ? `Hits <b style="color:var(--foreground)">${this.practiceHits}</b> &nbsp;\xB7&nbsp; Score <b style="color:var(--foreground)">${this.practiceHits * 50}</b>` : `Wave <b style="color:var(--foreground)">${this.wave}</b> &nbsp;\xB7&nbsp; Score <b style="color:var(--foreground)">${this.score}</b> &nbsp;\xB7&nbsp; Kills <b style="color:var(--foreground)">${this.kills}</b>`;
+      this._hud.innerHTML = `<div class="sg-h" style="font-size:13px;color:var(--foreground)">${title}</div><div class="sg-sep" style="margin:8px 0"></div><div class="sg-mono" style="font-size:12px;color:var(--muted-fg)">${stats}${online}</div>`;
       this._hpFill.style.width = `${this.hp / PLAYER_MAX_HP * 100}%`;
     }
     update(dt) {
@@ -3590,7 +4619,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     if (!this._coordBox) {
       this._coordBox = document.createElement("div");
       this._coordBox.id = "coord-box";
-      this._coordBox.style.cssText = "position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:10001;color:#fff;background:rgba(13,17,23,0.6);font:12px monospace;padding:4px 12px;border-radius:5px;letter-spacing:1px;pointer-events:none;";
+      this._coordBox.className = "sg sg-panel sg-mono";
+      this._coordBox.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10001;font-size:11px;color:var(--muted-fg);padding:5px 16px;border-radius:9999px;pointer-events:none;";
       document.body.appendChild(this._coordBox);
     }
     this._coordT = 0;
@@ -3630,6 +4660,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     };
     this._keys = keys;
     this._flyMode = false;
+    this._crouched = false;
     this._pitch = 0;
     this._yaw = 0;
     const canvas = this.app.graphicsDevice.canvas;
@@ -3684,6 +4715,9 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           }
           break;
         case "KeyC":
+          keys.crouch = down;
+          break;
+        case "KeyN":
           if (down) self._balls.clear();
           break;
         case "KeyX":
@@ -3728,6 +4762,9 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
             if (self._director.state === "practice") self._director.exitPractice();
             else self._director.enterPractice();
           }
+          break;
+        case "KeyM":
+          if (down && self._scenes) self._scenes.toggleSidebar();
           break;
         case "KeyB":
           if (down && self._voxelView) {
@@ -3854,6 +4891,12 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._npcs.sounds = this._sounds;
       this._npcs.getPlayerPos = () => walkCamera.position;
     }
+    try {
+      this._friends = this._npcs ? new FriendSystem(this.app, collision, this._npcs) : null;
+    } catch (e) {
+      console.error("friend system init failed", e);
+      this._friends = null;
+    }
     if (this._viewmodel) this._viewmodel.sounds = this._sounds;
     try {
       this._targets = new TargetSystem(this.app, collision, this._sounds);
@@ -3862,8 +4905,23 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._targets = null;
     }
     try {
+      this._drops = new DropSystem(this.app, this);
+    } catch (e) {
+      console.error("drop system init failed", e);
+      this._drops = null;
+    }
+    try {
+      this._requisition = new RequisitionSystem(this.app, this);
+    } catch (e) {
+      console.error("requisition init failed", e);
+      this._requisition = null;
+    }
+    try {
       this._scenes = new SceneManager(this.app, collision, controller, walkCamera, this);
       this._scenes.switchTo(2);
+      setTimeout(() => {
+        if (this._scenes) this._scenes._maybeCapture();
+      }, 6e3);
     } catch (e) {
       console.error("scene manager init failed", e);
       this._scenes = null;
@@ -3876,6 +4934,22 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         this._targets.onHit = () => this._director.practiceHit();
       }
       if (this._director && this._scenes) this._director.sceneMgr = this._scenes;
+      if (this._friends) this._friends.scenes = this._scenes;
+      try {
+        this._net = new NetSystem(this.app, this, {
+          npcs: this._npcs,
+          balls: this._balls,
+          scenes: this._scenes,
+          director: this._director,
+          walkCamera
+        });
+        if (this._net.enabled && this._viewmodel) {
+          this._viewmodel.onShoot = (ox, oy, oz, dx, dy, dz) => this._net.sendShot(ox, oy, oz, dx, dy, dz);
+        }
+      } catch (e) {
+        console.error("net init failed", e);
+        this._net = null;
+      }
       if (this._director) {
         this._director.onRestart = () => {
           if (this._balls) this._balls.clear();
@@ -3893,7 +4967,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       console.error("game director init failed", e);
       this._director = null;
     }
-    window.walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel, director: this._director, targets: this._targets, scenes: this._scenes };
+    window.walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel, director: this._director, targets: this._targets, scenes: this._scenes, net: this._net, friends: this._friends };
     this._hudT = 0;
   };
   WalkScript.prototype.update = function(dt) {
@@ -3908,8 +4982,9 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     if (this._coordT > 0.1 && this._coordBox && typeof this.entity.getPosition === "function") {
       this._coordT = 0;
       const cp = this.entity.getPosition();
-      const sceneName = this._scenes ? SCENES[this._scenes.current].name : "?";
-      this._coordBox.textContent = `\u{1F4CD} ${sceneName} \xB7 x ${cp.x.toFixed(2)}  y ${cp.y.toFixed(2)}  z ${cp.z.toFixed(2)}`;
+      const si = this._scenes ? this._scenes.current : 0;
+      const sceneName = this._scenes ? SCENES[si].name : "?";
+      this._coordBox.innerHTML = `<span style="color:var(--foreground);font-weight:500">${sceneName}</span> &nbsp;\xB7&nbsp; ${cp.x.toFixed(2)}, ${cp.y.toFixed(2)}, ${(-cp.z).toFixed(2)}`;
     }
     if (this._balls) this._balls.step(Math.min(dt, 0.05));
     if (this._npcs) this._npcs.step(Math.min(dt, 0.05), this._balls ? this._balls.balls : []);
@@ -3917,6 +4992,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     if (this._director) this._director.update(dt);
     if (this._targets) this._targets.step(dt, this._balls ? this._balls.balls : []);
     if (this._scenes) this._scenes.update();
+    if (this._net) this._net.step(dt);
+    if (this._friends) this._friends.step(dt);
     if (this._voxelView) this._voxelView.update(this.entity);
     if (this._labels) this._labels.update();
     const keys = this._keys;
@@ -3948,6 +5025,25 @@ Y = walk mode | WASD + E/Q up/down | Shift fast`;
       }
       return;
     }
+    const wantCrouch = !!keys.crouch;
+    if (wantCrouch !== this._crouched) {
+      const c = this._controller;
+      if (wantCrouch) {
+        c.capsuleHeight = 0.9;
+        c.eyeHeight = 0.75;
+        c.moveGroundSpeed = 3;
+        this._crouched = true;
+      } else {
+        const p = this._walkCamera.position;
+        const up = this._collision.queryRay(p.x, p.y + 0.1, p.z, 0, 1, 0, 0.85);
+        if (!up) {
+          c.capsuleHeight = 1.5;
+          c.eyeHeight = 1.3;
+          c.moveGroundSpeed = 7;
+          this._crouched = false;
+        }
+      }
+    }
     const x = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
     const z = (keys.forward ? 1 : 0) - (keys.backward ? 1 : 0);
     const stepMode = x !== 0 || z !== 0 ? keys.run ? "run" : "walk" : "none";
@@ -3977,7 +5073,7 @@ Y = walk mode | WASD + E/Q up/down | Shift fast`;
     if (this._hudT > 0.25 && this._hud) {
       this._hudT = 0;
       this._hud.textContent = `pos ${wp.x.toFixed(2)} ${wp.y.toFixed(2)} ${wp.z.toFixed(2)}
-LMB shoot | R reload | WASD Space Shift | Y fly | F respawn | G ball | C clear
+LMB shoot | R reload | C crouch | WASD Space Shift | Y fly | F respawn | G ball | N clear
 X label | V remove | [ ] size | L labels | Backspace delete | B voxels`;
     }
   };

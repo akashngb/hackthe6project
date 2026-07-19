@@ -56,6 +56,7 @@ gsplat asset **298979100**.
 | 298987672/73/74 | bahen-front.sog + voxel | Bahen main entrance (outdoor, safe zone) |
 | 298987763/64/65 | classroom.sog + voxel | Bahen classroom scene          |
 | 298988208/09/10 | bahen-hallway.sog + voxel | Bahen large hallway scene  |
+| 298999341/43/44 | bahen-stairs.sog + voxel | Bahen stairwell (no NPCs of any kind) |
 
 Scene entities: `University 3` (gsplat, position **(0,0,0)**, rotation
 **(0,0,180)** — must stay that way or rendering and collision diverge) and
@@ -88,10 +89,10 @@ await fetch('/api/assets/298979018', { method: 'PUT', body: fd });
 | click | start game / grab mouse; further clicks fire |
 | LMB (hold) | full-auto: small physics balls from the carbine muzzle |
 | R | reload (30-round magazine, auto-reload on empty) |
-| WASD / arrows | walk · Shift run · Space jump |
+| WASD / arrows | walk · Shift run · Space jump · C crouch |
 | F | respawn |
 | Y | toggle fly mode (E/Q up/down, Shift fast) |
-| G | hand-throw a big slow ball · C clear balls |
+| G | hand-throw a big slow ball |
 | X | label object under crosshair |
 | V | remove/restore aimed labeled object (splats vanish + collision carved) |
 | [ / ] | shrink / grow aimed label sphere |
@@ -99,7 +100,42 @@ await fetch('/api/assets/298979018', { method: 'PUT', body: fd });
 | B | toggle the collision voxel view (supersplat-style grid) |
 | T | toggle target practice mode (small floating targets, no ricochets) |
 | top-right dropdown | teleport between scanned locations |
+| M | locations sidebar (preview cards, click to teleport, drop-zone) |
+| N | clear balls |
 | ` | toggle the green debug HUD |
+
+## Multiplayer (party/)
+
+`party/relay.mjs` is a ~60-line Node WebSocket relay (rooms via URL path
+/parties/main/<room>, hello/join/leave + rebroadcast with sender id;
+`party/server.ts` is the same protocol as a PartyKit worker). Run
+`node relay.mjs 1999` and expose with `cloudflared tunnel --url
+http://localhost:1999`; the client (NetSystem) reads `?party=` / `?room=`
+URL params or the baked default. Peers exchange 12Hz state
+(pos/yaw/crouch/scene) + shot events; remote players render as soldier
+avatars with interpolation, name tags, walk/idle anims, and scene
+filtering; shots replay with real local physics.
+
+## Import scans at runtime (DropSystem)
+
+Drop a scan .zip (containing a .sog + voxel .json/.bin — any filenames;
+the meta json is identified by content) anywhere on the page or on the
+sidebar drop-zone: a dependency-free zip reader (native
+DecompressionStream) unpacks it in the browser, registers a new scene in
+SceneManager, and teleports you in. The whole thesis in one gesture:
+any scan becomes a level.
+
+## UI
+
+One injected stylesheet (`UI_CSS`) built on shadcn/ui's design tokens
+(zinc dark palette, Inter, its radius/border/shadow scale) with vanilla-DOM
+recreations of its component anatomy: Card panels (HUD, Health, Ammo),
+Progress bars, pill Badges for all floating world tags (enemy red, ally
+blue, friend emerald, portal primary), outline badge chips, and shadcn
+Buttons on the title/game-over screens. Locations sidebar (M): per-scene
+preview cards (framebuffer screenshots auto-captured on first visit,
+persisted to localStorage), Safe/Combat/Imported chips, ring-highlighted
+active card, and the zip drop-zone.
 
 ## Physics & audio notes
 
@@ -114,9 +150,13 @@ at 30fps and asserts none leave the collision grid.
 
 ## Locations (SceneManager)
 
-`SCENES` in the adapter lists five scans. The game opens at Bahen Front
+`SCENES` in the adapter lists six scans. Bahen Stairs is marked `noNpcs`:
+no soldiers, no wandering friends, no requisitioned units ever spawn there
+(the friend spawner checks the flag on every spawn path, including late
+asset loads). The game opens at Bahen Front
 (outdoor `noSoldiers` safe zone). Portal network: Bahen Front door at
-(2.64, 1.65, 7.08) → Bahen Hallway; Bahen Hallway (spawn -1.26, 0.36,
+(2.64, 1.65, 7.08) → Bahen Stairs (arriving at world (0.04, 0.21, 1.22) — the coord pill shows -z, so it reads
+as "0.04, 0.21, -1.22" in-game; also the stairs' pinned spawn); Bahen Hallway (spawn -1.26, 0.36,
 -2.72) has a doorway at (9.46, 0.42, 7.25) ⇄ Bahen Classroom (spawn
 -1.54, 0.3, -6.26, which doubles as the return portal — portals arm only
 after the player steps clear, preventing instant bounce-back). Bahen 5F
