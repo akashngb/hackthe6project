@@ -1544,6 +1544,8 @@
       __publicField(this, "_desiredCount", 0);
       __publicField(this, "_push", { x: 0, y: 0, z: 0 });
       __publicField(this, "_screenPos");
+      __publicField(this, "_reach", null);
+      __publicField(this, "_reachFrom", { x: 1e9, z: 1e9 });
       __publicField(this, "_refillT", 0);
       this.app = app;
       this.collision = collision;
@@ -1689,29 +1691,68 @@
       }
       this.npcs.length = 0;
       this._desiredCount = 0;
+      this._reach = null;
+      this._reachFrom = { x: 1e9, z: 1e9 };
+    }
+    /**
+     * Flood-fill the walkable region around the player on a 0.4m lattice.
+     * A neighbor cell is walkable if its floor is within a 0.45m step of the
+     * current cell (rails, ledges and balcony gaps fail this) and there is
+     * free space at torso height. This is true reachability: anything the
+     * player could walk to — and nothing they couldn't.
+     */
+    _computeReachable() {
+      const col = this.collision;
+      const pp = this._playerPos();
+      const STEP = 0.4;
+      const MAX_CELLS = 9e3;
+      const MAX_R = 30;
+      const startDown = col.queryRay(pp.x, pp.y, pp.z, 0, -1, 0, 4);
+      if (!startDown) {
+        this._reach = null;
+        return;
+      }
+      const key = (x, z) => `${Math.round(x / STEP)}|${Math.round(z / STEP)}`;
+      const seen = /* @__PURE__ */ new Set();
+      const cells = [];
+      const queue = [{ x: pp.x, z: pp.z, floor: startDown.y }];
+      seen.add(key(pp.x, pp.z));
+      while (queue.length && cells.length < MAX_CELLS) {
+        const c = queue.shift();
+        cells.push(c);
+        for (const [dx, dz] of [[STEP, 0], [-STEP, 0], [0, STEP], [0, -STEP]]) {
+          const nx = c.x + dx, nz = c.z + dz;
+          const k = key(nx, nz);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const ddx = nx - pp.x, ddz = nz - pp.z;
+          if (ddx * ddx + ddz * ddz > MAX_R * MAX_R) continue;
+          const down = col.queryRay(nx, c.floor + 1, nz, 0, -1, 0, 3);
+          if (!down) continue;
+          const nf = down.y;
+          if (Math.abs(nf - c.floor) > 0.45) continue;
+          if (!col.isFreeAt(nx, nf + 0.9, nz)) continue;
+          queue.push({ x: nx, z: nz, floor: nf });
+        }
+      }
+      this._reach = cells;
+      this._reachFrom = { x: pp.x, z: pp.z };
     }
     _randomFloorSpot() {
       const col = this.collision;
-      const res = col.voxelResolution;
-      const gMaxX = col.gridMinX + col.numVoxelsX * res;
-      const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
       const pp = this._playerPos();
-      const playerFloor = pp.y - 1.5;
-      const probeY = pp.y + 0.6;
-      for (let attempt = 0; attempt < 250; attempt++) {
-        const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
-        const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
+      const mdx = pp.x - this._reachFrom.x, mdz = pp.z - this._reachFrom.z;
+      if (!this._reach || mdx * mdx + mdz * mdz > 9) this._computeReachable();
+      if (!this._reach || this._reach.length < 10) return null;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const c = this._reach[Math.random() * this._reach.length | 0];
+        const x = c.x + (Math.random() - 0.5) * 0.3;
+        const z = c.z + (Math.random() - 0.5) * 0.3;
         const ddx = x - pp.x, ddz = z - pp.z;
         const dd = Math.sqrt(ddx * ddx + ddz * ddz);
         if (dd < 4 || dd > 28) continue;
-        const down = col.queryRay(x, probeY, z, 0, -1, 0, 20);
-        if (!down) continue;
-        const floor = down.y;
-        if (this.floorRange) {
-          if (floor < this.floorRange[0] - 0.05 || floor > this.floorRange[1] + 0.05) continue;
-        } else if (Math.abs(floor - playerFloor) > 1.2) {
-          continue;
-        }
+        const floor = c.floor;
+        if (this.floorRange && (floor < this.floorRange[0] - 0.05 || floor > this.floorRange[1] + 0.05)) continue;
         const up = col.queryRay(x, floor + 0.2, z, 0, 1, 0, 20);
         if (up && up.y - floor < this.npcHeight + 0.1) continue;
         if (!col.isFreeAt(x, floor + 0.9, z)) continue;
