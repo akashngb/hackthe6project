@@ -8,6 +8,9 @@ import { VoxelCollision } from './vendor/collision/voxel-collision';
 
 const pc: any = (globalThis as any).pc;
 
+const BUILD_TAG = 'v10-clearance';
+console.log('[walk-collision] build', BUILD_TAG);
+
 /** Keyboard move input scale (matches gta6 main.ts) */
 const MOVE_SPEED = 4;
 const RUN_MULTIPLIER = 2;
@@ -339,6 +342,10 @@ class NpcSystem {
     npcRadius = NPC_RADIUS;
     walkSpeedMul = 1;
     combatEnabled = false;
+    /** true while a scene switch is in flight — freezes all NPC activity */
+    suspended = false;
+    /** per-scene pinned soldier floor band [minY, maxY]; null = player-relative */
+    floorRange: any = null;
     /** authoritative player position (walk controller state); falls back to
      *  the camera entity, which lags one frame behind teleports */
     getPlayerPos: any = null;
@@ -395,23 +402,40 @@ class NpcSystem {
         }
     }
 
+    /**
+     * Measure the model by walking its node/bone hierarchy in world space.
+     * Skinned-mesh AABBs are only refreshed when the model is actually
+     * rendered, so off-screen soldiers report garbage bounds (which once
+     * collapsed the auto-scale to zero); bone transforms always update.
+     */
     _measureModel(model: any) {
-        let min: any = null, max: any = null;
-        const rs = model.findComponents('render');
-        for (const r of rs) {
-            for (const mi of r.meshInstances) {
-                const mn = mi.aabb.getMin(), mx = mi.aabb.getMax();
-                if (!min) {
-                    min = { x: mn.x, y: mn.y, z: mn.z };
-                    max = { x: mx.x, y: mx.y, z: mx.z };
-                } else {
-                    min.x = Math.min(min.x, mn.x); min.y = Math.min(min.y, mn.y); min.z = Math.min(min.z, mn.z);
-                    max.x = Math.max(max.x, mx.x); max.y = Math.max(max.y, mx.y); max.z = Math.max(max.z, mx.z);
-                }
+        // measure ONLY real skeleton bones (mixamorig:*): rigs carry helper
+        // nodes (IK poles, nulls) parked at extreme coordinates that poison
+        // any all-nodes bound; fall back to all nodes if no rig found
+        const collect = (rigOnly: boolean) => {
+            let minX = Infinity, minY = Infinity, minZ = Infinity;
+            let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+            let count = 0;
+            const stack = [model];
+            while (stack.length) {
+                const n = stack.pop();
+                const ch = n.children;
+                for (let i = 0; i < ch.length; i++) stack.push(ch[i]);
+                if (rigOnly && (!n.name || n.name.indexOf('mixamorig') === -1)) continue;
+                const p = n.getPosition();
+                if (!isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z)) continue;
+                if (p.x < minX) minX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.z < minZ) minZ = p.z;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y > maxY) maxY = p.y;
+                if (p.z > maxZ) maxZ = p.z;
+                count++;
             }
-        }
-        if (!min) return null;
-        return { minY: min.y, ext: { x: max.x - min.x, y: max.y - min.y, z: max.z - min.z } };
+            if (count < 3) return null;
+            return { minY, ext: { x: maxX - minX, y: maxY - minY, z: maxZ - minZ } };
+        };
+        return collect(true) || collect(false);
     }
 
     _track(key: string) {
@@ -427,23 +451,27 @@ class NpcSystem {
         const gMaxX = col.gridMinX + col.numVoxelsX * res;
         const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
         const clearances: number[] = [];
-        for (let i = 0; i < 60 && clearances.length < 25; i++) {
+        for (let i = 0; i < 200 && clearances.length < 25; i++) {
             const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
             const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
             const down = col.queryRay(x, midY, z, 0, -1, 0, 30);
             const up = col.queryRay(x, midY, z, 0, 1, 0, 30);
-            if (down && up) clearances.push(up.y - down.y);
+            if (!down || !up) continue;
+            const c = up.y - down.y;
+            // rays that start inside solid geometry report ~0 clearance —
+            // most of a sparse scan's grid is uncarved, so filter those out
+            if (c > 0.8) clearances.push(c);
         }
+        this.npcHeight = NPC_HEIGHT;
         if (clearances.length >= 5) {
             clearances.sort((a, b) => a - b);
             const median = clearances[Math.floor(clearances.length / 2)];
-            // scans are metric (player capsule is fixed 1.5m and walking feels
-            // right), so soldiers get a fixed real-world height; the measured
-            // clearance only caps it for unusually low or off-scale scans
-            this.npcHeight = Math.min(1.65, median * 0.85);
-            this.npcRadius = this.npcHeight * 0.18;
+            this.npcHeight = Math.min(NPC_HEIGHT, Math.max(0.9, median * 0.85));
             console.log('npcSystem: corridor clearance', median.toFixed(2), '→ soldier height', this.npcHeight.toFixed(2));
+        } else {
+            console.warn('npcSystem: too few clearance samples — using default height', NPC_HEIGHT);
         }
+        this.npcRadius = this.npcHeight * 0.18;
     }
 
     _onAssetsReady() {
@@ -504,34 +532,31 @@ class NpcSystem {
         const playerFloor = pp.y - 1.5; // eye 1.3 + hover 0.2
         const probeY = pp.y + 0.6;
 
-        const tryOnce = (strict: boolean) => {
-            for (let attempt = 0; attempt < (strict ? 120 : 80); attempt++) {
-                const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
-                const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
+        // strict only: a soldier the player can never see or reach is worse
+        // than no soldier — _fillPopulation retries periodically instead
+        for (let attempt = 0; attempt < 250; attempt++) {
+            const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
+            const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
 
-                if (strict) {
-                    const ddx = x - pp.x, ddz = z - pp.z;
-                    const dd = Math.sqrt(ddx * ddx + ddz * ddz);
-                    if (dd < 4 || dd > 28) continue;
-                }
+            const ddx = x - pp.x, ddz = z - pp.z;
+            const dd = Math.sqrt(ddx * ddx + ddz * ddz);
+            if (dd < 4 || dd > 28) continue;
 
-                const fromY = strict ? probeY : col.gridMinY + col.numVoxelsY * res * 0.5;
-                const down = col.queryRay(x, fromY, z, 0, -1, 0, 20);
-                if (!down) continue;
-                const floor = down.y;
-                if (strict && Math.abs(floor - playerFloor) > 1.2) continue;
-
-                const up = col.queryRay(x, floor + 0.2, z, 0, 1, 0, 20);
-                if (up && up.y - floor < this.npcHeight + 0.1) continue;
-                if (!col.isFreeAt(x, floor + 0.9, z)) continue;
-                return { x, y: floor, z };
+            const down = col.queryRay(x, probeY, z, 0, -1, 0, 20);
+            if (!down) continue;
+            const floor = down.y;
+            if (this.floorRange) {
+                if (floor < this.floorRange[0] - 0.05 || floor > this.floorRange[1] + 0.05) continue;
+            } else if (Math.abs(floor - playerFloor) > 1.2) {
+                continue;
             }
-            return null;
-        };
 
-        // strict (same storey, sensible range) first; relax only if the
-        // scan simply doesn't have enough valid same-storey area
-        return tryOnce(true) || tryOnce(false);
+            const up = col.queryRay(x, floor + 0.2, z, 0, 1, 0, 20);
+            if (up && up.y - floor < this.npcHeight + 0.1) continue;
+            if (!col.isFreeAt(x, floor + 0.9, z)) continue;
+            return { x, y: floor, z };
+        }
+        return null;
     }
 
     _spawnNpc(seed: number) {
@@ -542,6 +567,13 @@ class NpcSystem {
         const model = this.assets.model.resource.instantiateRenderEntity();
         root.addChild(model);
         this.app.root.addChild(root);
+
+        // skinned mesh world AABBs can lag/misreport after runtime scaling,
+        // getting the whole model frustum-culled away from the world origin —
+        // never cull soldiers (there are at most a handful)
+        for (const r of model.findComponents('render')) {
+            for (const mi of r.meshInstances) mi.cull = false;
+        }
 
         // scale is applied one frame later, once the skinned mesh has a real AABB
         // mixamo rigs face +Z; PlayCanvas forward is -Z
@@ -643,18 +675,26 @@ class NpcSystem {
         this._syncTag(npc);
     }
 
-    /** line of sight from npc chest to the player eye (voxel raycast + hearing) */
-    _hasLineOfSight(npc: any) {
+    /** pure raycast line of sight from npc chest to the player eye */
+    _clearShot(npc: any) {
         const pp = this._playerPos();
         const fx = npc.p.x, fy = npc.p.y + this.npcHeight * 0.75, fz = npc.p.z;
         const dx = pp.x - fx, dy = pp.y - fy, dz = pp.z - fz;
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (dist < NPC_HEARING_RANGE) return true;
         if (dist > NPC_SIGHT_RANGE * 1.2) return false;
+        if (dist < 0.5) return true;
         const hit = this.collision.queryRay(fx, fy, fz, dx / dist, dy / dist, dz / dist, dist);
         if (!hit) return true;
         const hx = hit.x - fx, hy = hit.y - fy, hz = hit.z - fz;
         return Math.sqrt(hx * hx + hy * hy + hz * hz) > dist * 0.92;
+    }
+
+    /** awareness: clear shot OR point-blank hearing (walls don't block ears) */
+    _hasLineOfSight(npc: any) {
+        if (this._clearShot(npc)) return true;
+        const pp = this._playerPos();
+        const dx = pp.x - npc.p.x, dy = pp.y - (npc.p.y + this.npcHeight * 0.75), dz = pp.z - npc.p.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz) < NPC_HEARING_RANGE;
     }
 
     /** nearest live npc intersected by the ray (vertical-capsule approximation) */
@@ -757,14 +797,25 @@ class NpcSystem {
             }
         } else if (fit.phase === 'scale') {
             const cur = npc.model.getLocalScale().x;
-            const scale = cur * (this.npcHeight / m.ext.y);
+            // bone span reads joint-to-joint; pad ~8% for skull/sole volume
+            let scale = cur * (this.npcHeight * 0.93 / m.ext.y);
+            // hard sanity clamp: mixamo rigs are ~180 raw units for ~1.7m,
+            // so a correct scale is ~0.009 — a wild value means the
+            // measurement was poisoned; use the known-good fallback
+            if (!isFinite(scale) || scale < 0.0005 || scale > 1) {
+                console.warn('npcSystem: implausible scale', scale, 'span', m.ext.y.toFixed(2), '— using fallback');
+                scale = (this.npcHeight / 180);
+            }
             npc.model.setLocalScale(scale, scale, scale);
-            console.log('npcSystem: model height', m.ext.y.toFixed(2), '→ scale', scale.toFixed(4));
+            console.log('npcSystem: bone span', m.ext.y.toFixed(2), '→ scale', scale.toFixed(4));
             fit.phase = 'ground';
             fit.wait = 2;
         } else if (fit.phase === 'ground') {
-            const lp = npc.model.getLocalPosition();
-            npc.model.setLocalPosition(lp.x, lp.y + (npc.p.y - m.minY), lp.z);
+            const dy = npc.p.y - m.minY;
+            if (isFinite(dy) && Math.abs(dy) < 50) {
+                const lp = npc.model.getLocalPosition();
+                npc.model.setLocalPosition(lp.x, lp.y + dy, lp.z);
+            }
             npc.fit = null;
             this._attachWeapon(npc);
         }
@@ -782,6 +833,9 @@ class NpcSystem {
             if (!hand) { console.warn('npcSystem: RightHand bone not found'); return; }
 
             const gun = this.assets.gun.resource.instantiateRenderEntity();
+            for (const r of gun.findComponents('render')) {
+                for (const mi of r.meshInstances) mi.cull = false;
+            }
             hand.addChild(gun);
             gun.setLocalPosition(GUN_LOCAL_POS[0], GUN_LOCAL_POS[1], GUN_LOCAL_POS[2]);
             gun.setLocalEulerAngles(GUN_LOCAL_EULER[0], GUN_LOCAL_EULER[1], GUN_LOCAL_EULER[2]);
@@ -792,6 +846,9 @@ class NpcSystem {
 
             if (this.assets.flash) {
                 const flash = this.assets.flash.resource.instantiateRenderEntity();
+                for (const r of flash.findComponents('render')) {
+                    for (const mi of r.meshInstances) mi.cull = false;
+                }
                 gun.addChild(flash);
                 flash.setLocalPosition(FLASH_LOCAL_POS[0], FLASH_LOCAL_POS[1], FLASH_LOCAL_POS[2]);
                 flash.setLocalScale(FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE);
@@ -817,9 +874,19 @@ class NpcSystem {
         }
     }
 
+    _refillT = 0;
+
     step(dt: number, balls: any[]) {
-        if (!this.ready) return;
+        if (!this.ready || this.suspended) return;
         const col = this.collision;
+
+        // keep trying to reach the desired population as the player moves —
+        // spawn spots are strictly same-storey, so early attempts can fail
+        this._refillT -= dt;
+        if (this._refillT <= 0) {
+            this._refillT = 2;
+            if (this.aliveCount() < this._desiredCount) this._fillPopulation();
+        }
 
         for (const b of balls) this.hitTest(b, dt);
 
@@ -848,7 +915,8 @@ class NpcSystem {
                 npc.percT -= dt;
                 if (npc.percT <= 0) {
                     npc.percT = 0.15;
-                    npc.canSee = this._hasLineOfSight(npc);
+                    npc.clearShot = this._clearShot(npc);
+                    npc.canSee = npc.clearShot || this._hasLineOfSight(npc);
                 }
                 const pp = this._playerPos();
                 const pdx = pp.x - npc.p.x, pdz = pp.z - npc.p.z;
@@ -933,7 +1001,7 @@ class NpcSystem {
 
                 // burst fire when roughly on target (npc-controller.js firing rules)
                 npc.shootT -= dt;
-                if (npc.shootT <= 0 && Math.abs(dyaw) < 15 && npc.reloadT <= 0 && dist <= NPC_FIRE_RANGE) {
+                if (npc.shootT <= 0 && Math.abs(dyaw) < 15 && npc.reloadT <= 0 && dist <= NPC_FIRE_RANGE && npc.clearShot) {
                     npc.shootT = 0.45 + Math.random() * 0.4 * (1 + npc.pers.randomness);
                     npc.bullets--;
                     if (npc.bullets <= 0) npc.reloadT = NPC_RELOAD_TIME;
@@ -1789,12 +1857,14 @@ class TargetSystem {
         const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
         const cs: number[] = [];
         const floors: number[] = [];
-        for (let i = 0; i < 80 && cs.length < 30; i++) {
+        for (let i = 0; i < 200 && cs.length < 30; i++) {
             const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
             const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
             const down = col.queryRay(x, midY, z, 0, -1, 0, 30);
             const up = col.queryRay(x, midY, z, 0, 1, 0, 30);
-            if (down && up) { cs.push(up.y - down.y); floors.push(down.y); }
+            if (!down || !up) continue;
+            const c = up.y - down.y;
+            if (c > 0.8) { cs.push(c); floors.push(down.y); }
         }
         cs.sort((a, b) => a - b);
         floors.sort((a, b) => a - b);
@@ -2189,6 +2259,7 @@ class SceneManager {
     script: any;
     current = 0;
     _busy = false;
+    _queued: any = null;
     _select: any = null;
     _portals: any[] = [];
     _screenPos: any = null;
@@ -2348,11 +2419,23 @@ class SceneManager {
     }
 
     async switchTo(i: number, spawnAt: any = null) {
-        if (this._busy || i === this.current) return;
+        if (this._busy) {
+            // never drop a request — run it as soon as the current one lands
+            this._queued = { i, spawnAt };
+            return;
+        }
+        if (i === this.current) return;
         this._busy = true;
         const scene = SCENES[i];
         const s: any = this.script;
         try {
+            // soldiers vanish the moment the switch starts and the whole NPC
+            // system freezes until the new scene is fully in place
+            if (s._npcs) {
+                s._npcs.suspended = true;
+                s._npcs.reset();
+                s._npcs.floorRange = scene.npcFloorY || null;
+            }
             if (s._director) s._director._showBanner(`TELEPORTING → ${scene.name.toUpperCase()}…`, 3);
 
             // 1) collision data
@@ -2407,11 +2490,13 @@ class SceneManager {
             if (d && (d.state === 'playing' || d.state === 'intermission')) {
                 if (scene.noSoldiers) {
                     d.state = 'playing';
+                    d._waveDelay = 0;
                     if (s._npcs) s._npcs.setPopulation(0);
                 } else {
+                    // fresh wave, spawned shortly AFTER the player has landed
                     d.wave = 0;
                     d.state = 'playing';
-                    d._nextWave();
+                    d._waveDelay = 0.6;
                 }
             }
 
@@ -2424,9 +2509,17 @@ class SceneManager {
         } catch (e) {
             console.error('sceneManager switch failed', e);
         }
+        if (s._npcs) s._npcs.suspended = false;
         this._busy = false;
         const canvas = this.app.graphicsDevice.canvas;
         if (canvas) canvas.requestPointerLock();
+
+        // run any switch that was requested while this one was loading
+        if (this._queued) {
+            const q = this._queued;
+            this._queued = null;
+            if (q.i !== this.current) this.switchTo(q.i, q.spawnAt);
+        }
     }
 }
 
@@ -2448,6 +2541,7 @@ class GameDirector {
     hp = PLAYER_MAX_HP;
     _regenT = 0;
     _interT = 0;
+    _waveDelay = 0;
     npcs: any;
     sceneMgr: any = null;
     sounds: any = null;
@@ -2638,6 +2732,10 @@ class GameDirector {
     }
 
     update(dt: number) {
+        if (this._waveDelay > 0 && this.state === 'playing') {
+            this._waveDelay -= dt;
+            if (this._waveDelay <= 0) this._nextWave();
+        }
         if (this.state === 'playing') {
             if (this._regenT > 0) {
                 this._regenT -= dt;
@@ -2646,7 +2744,7 @@ class GameDirector {
                 this._syncHud();
             }
             const scNow = this.sceneMgr ? SCENES[this.sceneMgr.current] : null;
-            if (!(scNow && scNow.noSoldiers) &&
+            if (this._waveDelay <= 0 && !(scNow && scNow.noSoldiers) &&
                 this.npcs.ready && this.npcs.npcs.length > 0 && this.npcs.aliveCount() === 0) {
                 this.state = 'intermission';
                 this._interT = WAVE_INTERMISSION;
@@ -3002,7 +3100,8 @@ WalkScript.prototype.update = function (this: any, dt: number) {
     if (this._coordT > 0.1 && this._coordBox && typeof this.entity.getPosition === 'function') {
         this._coordT = 0;
         const cp = this.entity.getPosition();
-        this._coordBox.textContent = `x ${cp.x.toFixed(2)}  y ${cp.y.toFixed(2)}  z ${cp.z.toFixed(2)}`;
+        const sceneName = this._scenes ? SCENES[this._scenes.current].name : '?';
+        this._coordBox.textContent = `📍 ${sceneName} · x ${cp.x.toFixed(2)}  y ${cp.y.toFixed(2)}  z ${cp.z.toFixed(2)}`;
     }
 
     if (this._balls) this._balls.step(Math.min(dt, 0.05));
