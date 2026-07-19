@@ -19,7 +19,9 @@ const FILES = {
   '298988209': `${repo}/bahen-hallway/bahen-hallway.voxel.json`,
   '298988210': `${repo}/bahen-hallway/bahen-hallway.voxel.bin`,
   '298987673': `${repo}/bahen-front/bahen-front.voxel.json`,
-  '298987674': `${repo}/bahen-front/bahen-front.voxel.bin`
+  '298987674': `${repo}/bahen-front/bahen-front.voxel.bin`,
+  '298999343': `${repo}/bahen-stairs/bahen-stairs.voxel.json`,
+  '298999344': `${repo}/bahen-stairs/bahen-stairs.voxel.bin`
 };
 const fetchStub = async (url) => {
   const m = String(url).match(/\/api\/assets\/(\d+)\//);
@@ -122,5 +124,28 @@ await settle();
 step(90);
 console.log('current scene index:', w.scenes.current);
 show('myhal (from classroom)');
+
+stage = 'switch-bahen-stairs';
+const stairsIdx = 5;
+// spy on the friend guard: resetForScene must not spawn anyone in a noNpcs scene
+let friendSpawnCalls = 0;
+if (w.friends) {
+  const realSpawn = w.friends._spawn.bind(w.friends);
+  w.friends._spawn = (cfg) => { friendSpawnCalls++; return realSpawn(cfg); };
+}
+await w.scenes.switchTo(stairsIdx);
+await settle();
+step(200); // way past the wave delay — nothing may spawn
+console.log('current scene index:', w.scenes.current);
+show('bahen stairs (noNpcs)');
+if (w.scenes.current !== stairsIdx) { console.log('FAIL: stairs switch did not land'); process.exit(1); }
+if (w.npcs.npcs.length !== 0) { console.log('FAIL: soldiers spawned in Bahen Stairs'); process.exit(1); }
+if (w.friends) {
+  w.friends.resetForScene();
+  if (friendSpawnCalls !== 0 || w.friends.friends.length !== 0) {
+    console.log('FAIL: friend NPCs spawned in Bahen Stairs'); process.exit(1);
+  }
+}
+console.log('bahen stairs: zero soldiers, zero friends ✓');
 
 process.exit(0);

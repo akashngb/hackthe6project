@@ -56,6 +56,7 @@ gsplat asset **298979100**.
 | 298987672/73/74 | bahen-front.sog + voxel | Bahen main entrance (outdoor, safe zone) |
 | 298987763/64/65 | classroom.sog + voxel | Bahen classroom scene          |
 | 298988208/09/10 | bahen-hallway.sog + voxel | Bahen large hallway scene  |
+| 298999341/43/44 | bahen-stairs.sog + voxel | Bahen stairwell (no NPCs of any kind) |
 
 Scene entities: `University 3` (gsplat, position **(0,0,0)**, rotation
 **(0,0,180)** — must stay that way or rendering and collision diverge) and
@@ -149,7 +150,10 @@ at 30fps and asserts none leave the collision grid.
 
 ## Locations (SceneManager)
 
-`SCENES` in the adapter lists five scans. The game opens at Bahen Front
+`SCENES` in the adapter lists six scans. Bahen Stairs is marked `noNpcs`:
+no soldiers, no wandering friends, no requisitioned units ever spawn there
+(the friend spawner checks the flag on every spawn path, including late
+asset loads). The game opens at Bahen Front
 (outdoor `noSoldiers` safe zone). Portal network: Bahen Front door at
 (2.64, 1.65, 7.08) → Bahen Hallway; Bahen Hallway (spawn -1.26, 0.36,
 -2.72) has a doorway at (9.46, 0.42, 7.25) ⇄ Bahen Classroom (spawn

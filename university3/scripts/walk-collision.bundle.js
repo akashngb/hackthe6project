@@ -3146,6 +3146,18 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       portals: [
         { x: 9.46, y: 0.42, z: 7.25, radius: 1.4, to: 3, label: "\u2192 Classroom" }
       ]
+    },
+    {
+      name: "Bahen Stairs",
+      gsplatId: 298999341,
+      voxelJson: [298999343, "bahen-stairs.voxel.json"],
+      voxelBin: [298999344, "bahen-stairs.voxel.bin"],
+      spawn: null,
+      // grid center
+      rot: [0, 0, 180],
+      noSoldiers: true,
+      noNpcs: true
+      // no friends / requisitioned units either
     }
   ];
   var SceneManager = class {
@@ -4040,6 +4052,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this.app.assets.load(asset);
     }
     _spawn(cfg) {
+      const sc = this.scenes ? SCENES[this.scenes.current] : null;
+      if (sc && sc.noNpcs) return;
       try {
         const spot = this.npcs._randomFloorSpot();
         if (!spot) {
@@ -4116,6 +4130,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         if (f.el) f.el.remove();
       }
       this.friends.length = 0;
+      const sc = this.scenes ? SCENES[this.scenes.current] : null;
+      if (sc && sc.noNpcs) return;
       for (const cfg of FRIENDS) {
         if (cfg.asset) this._spawn(cfg);
       }
@@ -4123,7 +4139,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     step(dt) {
       if (this.scenes && this.scenes.current !== this._lastScene) {
         this._lastScene = this.scenes.current;
-        if (this.friends.length) this.resetForScene();
+        this.resetForScene();
       }
       const camComp = this.npcs.cameraEntity.camera;
       const canvas = this.app.graphicsDevice.canvas;
@@ -4910,7 +4926,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       console.error("game director init failed", e);
       this._director = null;
     }
-    window.walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel, director: this._director, targets: this._targets, scenes: this._scenes, net: this._net };
+    window.walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel, director: this._director, targets: this._targets, scenes: this._scenes, net: this._net, friends: this._friends };
     this._hudT = 0;
   };
   WalkScript.prototype.update = function(dt) {
