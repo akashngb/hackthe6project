@@ -633,7 +633,7 @@ class NpcSystem {
 
         const el = document.createElement('div');
         el.className = 'sg sg-mono';
-        el.style.cssText = 'position:fixed;transform:translate(-50%,-100%);z-index:9997;color:#f3b6bb;background:rgba(14,17,23,0.75);border:1px solid rgba(230,57,70,0.35);font-size:10px;padding:1px 8px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);';
+        el.style.cssText = 'position:fixed;transform:translate(-50%,-100%);z-index:9997;color:var(--sg-enemy);background:rgba(9,11,13,0.8);border:1px solid rgba(255,90,44,0.45);font-size:10px;letter-spacing:1px;padding:1px 7px;border-radius:0;pointer-events:none;white-space:nowrap;';
         document.body.appendChild(el);
 
         const pers = NPC_PERSONALITIES[Math.floor(Math.random() * NPC_PERSONALITIES.length)];
@@ -1434,8 +1434,8 @@ class ViewmodelSystem {
 
     _makeUi() {
         this._ammoDiv = document.createElement('div');
-        this._ammoDiv.className = 'sg sg-panel sg-mono';
-        this._ammoDiv.style.cssText = 'position:fixed;bottom:20px;right:16px;font-size:22px;font-weight:700;z-index:9999;padding:10px 18px;pointer-events:none;letter-spacing:2px;';
+        this._ammoDiv.className = 'sg sg-panel';
+        this._ammoDiv.style.cssText = 'position:fixed;bottom:20px;right:16px;font-size:26px;font-weight:800;z-index:9999;padding:8px 20px;pointer-events:none;letter-spacing:3px;font-family:\'Arial Narrow\',Arial,sans-serif;';
         document.body.appendChild(this._ammoDiv);
         this._updateAmmo();
 
@@ -1758,7 +1758,7 @@ class LabelSystem {
 
         const el = document.createElement('div');
         el.className = 'sg sg-mono';
-        el.style.cssText = 'position:fixed;transform:translate(-50%,-140%);z-index:9998;color:#e8eaed;background:rgba(14,17,23,0.8);border:1px solid rgba(96,165,250,0.4);font-size:11px;padding:2px 9px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);';
+        el.style.cssText = 'position:fixed;transform:translate(-50%,-140%);z-index:9998;color:#eceff1;background:rgba(9,11,13,0.82);border:1px solid var(--sg-border);font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;border-radius:0;pointer-events:none;white-space:nowrap;';
         el.textContent = marker.label;
         document.body.appendChild(el);
         marker.el = el;
@@ -2548,7 +2548,7 @@ class SceneManager {
 
             const el = document.createElement('div');
             el.className = 'sg sg-mono';
-            el.style.cssText = 'position:fixed;transform:translate(-50%,-120%);z-index:9998;color:#93c5fd;background:rgba(14,17,23,0.8);border:1px solid rgba(96,165,250,0.5);font-size:11px;font-weight:700;padding:3px 11px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);';
+            el.style.cssText = 'position:fixed;transform:translate(-50%,-120%);z-index:9998;color:var(--sg-accent);background:rgba(9,11,13,0.82);border:1px solid rgba(255,184,0,0.55);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:3px 10px;border-radius:0;pointer-events:none;white-space:nowrap;';
             el.textContent = cfg.label || 'portal';
             document.body.appendChild(el);
 
@@ -2708,29 +2708,31 @@ class SceneManager {
 // ---- UI kit: one stylesheet, one visual language ----
 
 const UI_CSS = `
-:root{--sg-panel:rgba(14,17,23,0.82);--sg-border:rgba(255,255,255,0.09);--sg-accent:#e63946;--sg-text:#e8eaed;--sg-muted:#9aa0a6;}
-.sg{font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--sg-text);}
-.sg-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
-.sg-panel{background:var(--sg-panel);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--sg-border);border-radius:12px;}
-.sg-chip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:10px;letter-spacing:0.5px;font-weight:600;}
-.sg-chip.safe{background:rgba(46,160,67,0.18);color:#4ade80;}
-.sg-chip.combat{background:rgba(230,57,70,0.18);color:#f87171;}
-.sg-chip.drop{background:rgba(96,165,250,0.18);color:#93c5fd;}
-#sg-sidebar{position:fixed;top:16px;right:16px;bottom:16px;width:248px;z-index:10007;display:flex;flex-direction:column;padding:14px;gap:10px;overflow:hidden;transition:transform 0.22s ease,opacity 0.22s ease;}
+:root{--sg-panel:rgba(9,11,13,0.88);--sg-border:rgba(255,255,255,0.14);--sg-accent:#ffb800;--sg-enemy:#ff5a2c;--sg-ally:#3aa8e0;--sg-safe:#6fbf73;--sg-text:#eceff1;--sg-muted:#8b949c;}
+.sg{font-family:'Arial Narrow','Helvetica Neue',Arial,sans-serif;color:var(--sg-text);}
+.sg-mono{font-family:ui-monospace,Menlo,monospace;}
+.sg-panel{background:var(--sg-panel);border:1px solid var(--sg-border);border-radius:0;clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);}
+.sg-h{text-transform:uppercase;letter-spacing:3px;font-weight:700;}
+.sg-chip{display:inline-block;padding:1px 6px;border-radius:0;font-size:9px;letter-spacing:1.5px;font-weight:700;text-transform:uppercase;border:1px solid;}
+.sg-chip.safe{color:var(--sg-safe);border-color:rgba(111,191,115,0.5);}
+.sg-chip.combat{color:var(--sg-enemy);border-color:rgba(255,90,44,0.5);}
+.sg-chip.drop{color:var(--sg-ally);border-color:rgba(58,168,224,0.5);}
+#sg-sidebar{position:fixed;top:16px;right:16px;bottom:16px;width:248px;z-index:10007;display:flex;flex-direction:column;padding:14px;gap:10px;overflow:hidden;transition:transform 0.18s ease,opacity 0.18s ease;}
 #sg-sidebar.hidden{transform:translateX(280px);opacity:0;pointer-events:none;}
-#sg-sidebar h3{margin:0;font-size:11px;letter-spacing:3px;color:var(--sg-muted);font-weight:600;display:flex;justify-content:space-between;align-items:center;}
-#sg-sidebar h3 span{color:var(--sg-muted);font-weight:400;letter-spacing:0;}
+#sg-sidebar h3{margin:0;font-size:11px;letter-spacing:4px;color:var(--sg-accent);font-weight:700;display:flex;justify-content:space-between;align-items:center;text-transform:uppercase;border-bottom:1px solid var(--sg-border);padding-bottom:8px;}
+#sg-sidebar h3 span{color:var(--sg-muted);font-weight:400;letter-spacing:1px;font-size:9px;}
 #sg-cards{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px;}
-#sg-cards::-webkit-scrollbar{width:4px;}
-#sg-cards::-webkit-scrollbar-thumb{background:var(--sg-border);border-radius:2px;}
-.sg-card{border:1px solid var(--sg-border);border-radius:10px;overflow:hidden;cursor:pointer;background:rgba(255,255,255,0.03);transition:border-color 0.15s;flex-shrink:0;}
-.sg-card:hover{border-color:rgba(255,255,255,0.25);}
-.sg-card.active{border-color:var(--sg-accent);box-shadow:0 0 0 1px var(--sg-accent);}
-.sg-thumb{width:100%;height:96px;object-fit:cover;display:block;background:linear-gradient(135deg,#1c2230,#0e1117);}
-.sg-thumb-ph{width:100%;height:96px;display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--sg-muted);background:linear-gradient(135deg,#1c2230,#0e1117);}
-.sg-card-row{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;font-size:12px;font-weight:600;}
-#sg-dropzone{border:1.5px dashed rgba(255,255,255,0.22);border-radius:10px;padding:16px 10px;text-align:center;font-size:11px;color:var(--sg-muted);cursor:pointer;transition:border-color 0.15s,background 0.15s;flex-shrink:0;}
-#sg-dropzone:hover,#sg-dropzone.over{border-color:#93c5fd;background:rgba(96,165,250,0.06);color:#93c5fd;}
+#sg-cards::-webkit-scrollbar{width:3px;}
+#sg-cards::-webkit-scrollbar-thumb{background:var(--sg-border);}
+.sg-card{border:1px solid var(--sg-border);border-radius:0;overflow:hidden;cursor:pointer;background:rgba(255,255,255,0.02);transition:border-color 0.12s;flex-shrink:0;position:relative;}
+.sg-card:hover{border-color:rgba(255,255,255,0.35);}
+.sg-card.active{border-color:var(--sg-accent);}
+.sg-card.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--sg-accent);z-index:1;}
+.sg-thumb{width:100%;height:92px;object-fit:cover;display:block;background:#101418;filter:saturate(0.85);}
+.sg-thumb-ph{width:100%;height:92px;display:flex;align-items:center;justify-content:center;font-size:22px;letter-spacing:4px;color:var(--sg-muted);background:repeating-linear-gradient(-45deg,#0d1013,#0d1013 6px,#101418 6px,#101418 12px);}
+.sg-card-row{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;}
+#sg-dropzone,#sg-requisition{border:1px dashed rgba(255,255,255,0.25);border-radius:0;padding:12px 10px;text-align:center;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--sg-muted);cursor:pointer;transition:border-color 0.12s,color 0.12s;flex-shrink:0;}
+#sg-dropzone:hover,#sg-dropzone.over,#sg-requisition:hover{border-color:var(--sg-accent);color:var(--sg-accent);}
 `;
 
 function injectUiCss() {
@@ -3085,7 +3087,7 @@ class NetSystem {
 
             const el = document.createElement('div');
             el.className = 'sg sg-mono';
-            el.style.cssText = 'position:fixed;transform:translate(-50%,-100%);z-index:9997;color:#93c5fd;background:rgba(14,17,23,0.75);border:1px solid rgba(96,165,250,0.4);font-size:10px;font-weight:700;padding:1px 8px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);';
+            el.style.cssText = 'position:fixed;transform:translate(-50%,-100%);z-index:9997;color:var(--sg-ally);background:rgba(9,11,13,0.8);border:1px solid rgba(58,168,224,0.5);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:1px 7px;border-radius:0;pointer-events:none;white-space:nowrap;';
             el.textContent = peer.name || 'player';
             document.body.appendChild(el);
             peer.el = el;
@@ -3237,7 +3239,7 @@ class FriendSystem {
 
             const el = document.createElement('div');
             el.className = 'sg sg-mono';
-            el.style.cssText = 'position:fixed;transform:translate(-50%,-100%);z-index:9997;color:#4ade80;background:rgba(14,17,23,0.75);border:1px solid rgba(74,222,128,0.4);font-size:10px;font-weight:700;padding:1px 8px;border-radius:99px;pointer-events:none;white-space:nowrap;backdrop-filter:blur(6px);';
+            el.style.cssText = 'position:fixed;transform:translate(-50%,-100%);z-index:9997;color:var(--sg-safe);background:rgba(9,11,13,0.8);border:1px solid rgba(111,191,115,0.5);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:1px 7px;border-radius:0;pointer-events:none;white-space:nowrap;';
             el.textContent = cfg.name;
             document.body.appendChild(el);
 
@@ -3415,7 +3417,7 @@ class RequisitionSystem {
     makeCard(container: any) {
         const card = document.createElement('div');
         card.id = 'sg-requisition';
-        card.style.cssText = 'border:1.5px dashed rgba(255,255,255,0.22);border-radius:10px;padding:12px 10px;text-align:center;font-size:11px;color:var(--sg-muted);cursor:pointer;flex-shrink:0;';
+        card.style.cssText = '';
         card.innerHTML = '📸 requisition NPC<br><span style="font-size:10px;opacity:0.7">photos of a person → in-game character</span>';
         const status = document.createElement('div');
         status.style.cssText = 'font-size:10px;margin-top:6px;color:#93c5fd;display:none;';
@@ -3557,19 +3559,19 @@ class GameDirector {
         injectUiCss();
         this._overlay = mk('position:fixed;inset:0;z-index:10005;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(14,17,23,0.92),rgba(5,7,10,0.98));color:#e8eaed;text-align:center;cursor:pointer;');
         this._overlay.className = 'sg';
-        this._banner = mk('position:fixed;top:16%;left:50%;transform:translateX(-50%);z-index:10004;display:none;padding:12px 30px;font-size:15px;font-weight:600;letter-spacing:2px;white-space:nowrap;border-left:3px solid var(--sg-accent);');
+        this._banner = mk('position:fixed;top:14%;left:50%;transform:translateX(-50%);z-index:10004;display:none;padding:11px 44px;font-size:15px;font-weight:700;letter-spacing:6px;white-space:nowrap;text-transform:uppercase;border-top:2px solid var(--sg-accent);');
         this._banner.className = 'sg sg-panel';
         this._hud = mk('position:fixed;top:16px;left:16px;z-index:10001;pointer-events:none;padding:10px 16px;min-width:180px;');
         this._hud.className = 'sg sg-panel';
-        this._feed = mk('position:fixed;top:104px;left:16px;z-index:10001;pointer-events:none;font-size:11px;color:#9aa0a6;display:flex;flex-direction:column;gap:2px;');
+        this._feed = mk('position:fixed;top:104px;left:16px;z-index:10001;pointer-events:none;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#8b949c;display:flex;flex-direction:column;gap:2px;');
         this._feed.className = 'sg sg-mono';
         const hpWrap = mk('position:fixed;bottom:20px;left:16px;z-index:10001;width:230px;padding:10px 14px;pointer-events:none;');
         hpWrap.className = 'sg sg-panel';
-        hpWrap.innerHTML = '<div style="font-size:10px;letter-spacing:2px;color:var(--sg-muted);margin-bottom:6px">INTEGRITY</div>';
+        hpWrap.innerHTML = '<div class="sg-h" style="font-size:9px;color:var(--sg-muted);margin-bottom:5px">HP</div>';
         const hpBar = document.createElement('div');
-        hpBar.style.cssText = 'height:6px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden;';
+        hpBar.style.cssText = 'height:9px;background:rgba(255,255,255,0.07);overflow:hidden;border:1px solid var(--sg-border);';
         this._hpFill = document.createElement('div');
-        this._hpFill.style.cssText = 'height:100%;width:100%;background:linear-gradient(90deg,var(--sg-accent),#ffb4a2);border-radius:3px;transition:width 0.15s;';
+        this._hpFill.style.cssText = 'height:100%;width:100%;background:repeating-linear-gradient(90deg,#fff 0,#fff 12px,rgba(255,255,255,0.55) 12px,rgba(255,255,255,0.55) 13px);transition:width 0.15s;';
         hpBar.appendChild(this._hpFill);
         hpWrap.appendChild(hpBar);
         this._vignette = mk('position:fixed;inset:0;z-index:10000;pointer-events:none;background:radial-gradient(ellipse at center, transparent 55%, rgba(200,30,40,0.5) 100%);opacity:0;transition:opacity 0.12s;');
@@ -3618,15 +3620,16 @@ class GameDirector {
         this.state = 'title';
         this._overlay.style.display = 'flex';
         this._overlay.innerHTML =
-            '<div style="font-size:64px;font-weight:800;letter-spacing:14px;margin:8px 0 4px;color:var(--sg-accent)">SIEGE</div>' +
-            '<div style="font-size:12px;letter-spacing:5px;color:var(--sg-muted);margin-bottom:34px">REAL CAMPUS · REAL COLLISION</div>' +
-            '<div class="sg-mono" style="font-size:12px;line-height:2;color:var(--sg-muted)">' +
-            'WASD move &nbsp;·&nbsp; LMB fire &nbsp;·&nbsp; R reload &nbsp;·&nbsp; C crouch &nbsp;·&nbsp; Space jump<br>' +
-            'M locations &nbsp;·&nbsp; T target practice &nbsp;·&nbsp; X label &nbsp;·&nbsp; V remove object &nbsp;·&nbsp; B voxels' +
+            '<div style="font-size:70px;font-weight:800;letter-spacing:22px;margin:8px 0 0;padding-left:22px;color:#fff">SIEGE</div>' +
+            '<div style="width:340px;height:2px;background:var(--sg-accent);margin:14px 0 12px"></div>' +
+            '<div class="sg-h" style="font-size:11px;color:var(--sg-muted);margin-bottom:40px;letter-spacing:6px">REAL CAMPUS — REAL COLLISION</div>' +
+            '<div class="sg-mono" style="font-size:11px;line-height:2.2;letter-spacing:1px;color:var(--sg-muted);text-transform:uppercase">' +
+            'WASD move &nbsp;&nbsp;LMB fire &nbsp;&nbsp;R reload &nbsp;&nbsp;C crouch &nbsp;&nbsp;SPACE jump<br>' +
+            'M locations &nbsp;&nbsp;T targets &nbsp;&nbsp;X label &nbsp;&nbsp;V remove &nbsp;&nbsp;B voxels' +
             '</div>' +
-            '<div style="margin-top:36px;font-size:15px;font-weight:700;letter-spacing:2px;animation:sgpulse 1.4s infinite">CLICK TO START</div>' +
-            '<div style="margin-top:12px;font-size:11px;color:var(--sg-muted)">drop a scan .zip anywhere — or on the locations panel — to add your own place</div>' +
-            '<style>@keyframes sgpulse{0%,100%{opacity:1}50%{opacity:0.3}}</style>';
+            '<div class="sg-h" style="margin-top:44px;font-size:14px;letter-spacing:5px;color:var(--sg-accent);animation:sgpulse 1.4s infinite">▸ CLICK TO DEPLOY</div>' +
+            '<div style="margin-top:14px;font-size:10px;letter-spacing:1px;color:var(--sg-muted);text-transform:uppercase">drop a scan .zip to add your own location</div>' +
+            '<style>@keyframes sgpulse{0%,100%{opacity:1}50%{opacity:0.25}}</style>';
     }
 
     _start() {
@@ -3711,9 +3714,10 @@ class GameDirector {
         document.exitPointerLock();
         this._overlay.style.display = 'flex';
         this._overlay.innerHTML =
-            '<div style="font-size:50px;font-weight:800;letter-spacing:6px;color:var(--sg-accent)">YOU DIED</div>' +
-            `<div class="sg-mono" style="font-size:14px;margin-top:24px;line-height:2.1;color:var(--sg-muted)">final score <b style="color:#e8eaed">${this.score}</b> · waves <b style="color:#e8eaed">${this.wave}</b> · kills <b style="color:#e8eaed">${this.kills}</b></div>` +
-            '<div style="margin-top:32px;font-size:14px;font-weight:700;letter-spacing:2px;animation:sgpulse 1.4s infinite">CLICK TO RESTART</div>';
+            '<div style="font-size:54px;font-weight:800;letter-spacing:14px;padding-left:14px;color:var(--sg-enemy)">ELIMINATED</div>' +
+            '<div style="width:300px;height:2px;background:var(--sg-enemy);margin:16px 0 20px"></div>' +
+            `<div class="sg-mono" style="font-size:12px;line-height:2.2;letter-spacing:2px;color:var(--sg-muted);text-transform:uppercase">score <b style="color:#fff">${this.score}</b> &nbsp;waves <b style="color:#fff">${this.wave}</b> &nbsp;kills <b style="color:#fff">${this.kills}</b></div>` +
+            '<div class="sg-h" style="margin-top:36px;font-size:13px;letter-spacing:5px;color:var(--sg-accent);animation:sgpulse 1.4s infinite">▸ CLICK TO REDEPLOY</div>';
     }
 
     _syncHud() {
@@ -3723,8 +3727,8 @@ class GameDirector {
             ? `hits ${this.practiceHits} · score ${this.practiceHits * 50}`
             : `wave ${this.wave} · score ${this.score} · kills ${this.kills}`;
         this._hud.innerHTML =
-            `<div style="font-size:11px;letter-spacing:3px;font-weight:700;color:var(--sg-accent);margin-bottom:3px">${title}</div>` +
-            `<div class="sg-mono" style="font-size:12px;color:var(--sg-muted)">${stats}${online}</div>`;
+            `<div class="sg-h" style="font-size:10px;color:var(--sg-accent);margin-bottom:4px;border-bottom:1px solid var(--sg-border);padding-bottom:4px">${title}</div>` +
+            `<div class="sg-mono" style="font-size:11px;letter-spacing:1px;color:var(--sg-muted);text-transform:uppercase">${stats}${online}</div>`;
         this._hpFill.style.width = `${(this.hp / PLAYER_MAX_HP) * 100}%`;
     }
 
@@ -3781,7 +3785,7 @@ WalkScript.prototype.initialize = function (this: any) {
         this._coordBox = document.createElement('div');
         this._coordBox.id = 'coord-box';
         this._coordBox.className = 'sg sg-panel sg-mono';
-        this._coordBox.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10001;font-size:11px;color:var(--sg-muted);padding:5px 14px;letter-spacing:1px;pointer-events:none;';
+        this._coordBox.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10001;font-size:10px;color:var(--sg-muted);padding:5px 16px;letter-spacing:2px;text-transform:uppercase;pointer-events:none;';
         document.body.appendChild(this._coordBox);
     }
     this._coordT = 0;
