@@ -3,7 +3,7 @@
   var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
   var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  // ../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/pc-shim.js
+  // ../../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/pc-shim.js
   var _pc = globalThis.pc;
   var math = _pc.math;
   var Vec3 = _pc.Vec3;
@@ -13,7 +13,7 @@
   var INDEXFORMAT_UINT32 = _pc.INDEXFORMAT_UINT32;
   var SEMANTIC_POSITION = _pc.SEMANTIC_POSITION;
 
-  // ../../../../gta6/src/core/math.ts
+  // ../../../../../gta6/src/core/math.ts
   var damp = (damping, dt) => 1 - Math.pow(damping, dt * 1e3);
   var mod = (n, m) => (n % m + m) % m;
   var vecToAngles = (result, vec) => {
@@ -25,7 +25,7 @@
     return result;
   };
 
-  // ../../../../gta6/src/cameras/camera-utils.ts
+  // ../../../../../gta6/src/cameras/camera-utils.ts
   var DEFAULT_CONTROLLER_DAMPING = 0.95;
   var rotation = new Quat();
   var applyFrameRotation = (angles, rotate, minPitch = -90, maxPitch = 90) => {
@@ -63,7 +63,7 @@
     return angles;
   };
 
-  // ../../../../gta6/src/cameras/spawn-state.ts
+  // ../../../../../gta6/src/cameras/spawn-state.ts
   var SpawnState = class {
     constructor() {
       __publicField(this, "_position", new Vec3());
@@ -116,7 +116,7 @@
     }
   };
 
-  // ../../../../gta6/src/collision/find-spawn.ts
+  // ../../../../../gta6/src/collision/find-spawn.ts
   var SEARCH_RADIUS = 5;
   var SEARCH_RADIUS_SQ = SEARCH_RADIUS * SEARCH_RADIUS;
   var RAY_MAX_DIST = 1e3;
@@ -178,7 +178,7 @@
     return found;
   };
 
-  // ../../../../gta6/src/cameras/walk-controller.ts
+  // ../../../../../gta6/src/cameras/walk-controller.ts
   var FIXED_DT = 1 / 60;
   var MAX_SUBSTEPS = 10;
   var out = { x: 0, y: 0, z: 0 };
@@ -471,7 +471,7 @@
     }
   };
 
-  // ../../../../gta6/src/cameras/camera.ts
+  // ../../../../../gta6/src/cameras/camera.ts
   var rotation2 = new Quat();
   var avec = new Vec3();
   var bvec = new Vec3();
@@ -511,7 +511,7 @@
     }
   };
 
-  // ../../../../gta6/src/collision/collision.ts
+  // ../../../../../gta6/src/collision/collision.ts
   var PENETRATION_EPSILON = 1e-4;
   var MAX_RESOLVE_ITERATIONS = 4;
   function resolveIterative(cx, cy, cz, findPenetration, constraintNormals, scratch, out2) {
@@ -564,7 +564,7 @@
     return hasSignificantPush;
   }
 
-  // ../../../../gta6/src/collision/voxel-collision.ts
+  // ../../../../../gta6/src/collision/voxel-collision.ts
   var SOLID_LEAF_MARKER = 4278190080 >>> 0;
   var FLAT_R = 2;
   var INV_SQRT2 = 1 / Math.sqrt(2);
@@ -1237,10 +1237,29 @@
     }
   };
 
-  // ../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/gta6-adapter.ts
+  // ../../../../../../../private/tmp/claude-501/-Users-larry-hackthe6project--claude-worktrees-university-hallway-walking-collision-ef254f/63d0550f-16ce-48c9-bf7b-e60eeb946264/scratchpad/gta6-adapter.ts
   var pc = globalThis.pc;
-  var BUILD_TAG = "v11-shadcn";
+  var BUILD_TAG = "v12-publish";
   console.log("[walk-collision] build", BUILD_TAG);
+  function assetFileUrl(id, fname) {
+    try {
+      const getApp = pc.AppBase?.getApplication || pc.Application?.getApplication;
+      const app = getApp ? getApp.call(pc.AppBase || pc.Application) : null;
+      const reg = app && app.assets;
+      const a = reg && (reg.get(id) || reg.find && reg.find(fname));
+      const u = a && a.getFileUrl && a.getFileUrl();
+      if (u) return u;
+    } catch (e) {
+    }
+    let q = "";
+    try {
+      const cfg = window.config;
+      const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
+      q = `?branchId=${bid}`;
+    } catch (e) {
+    }
+    return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+  }
   var MOVE_SPEED = 4;
   var RUN_MULTIPLIER = 2;
   var LOOK_SENSITIVITY = 0.15;
@@ -1571,7 +1590,7 @@
       const q = this._branchQuery();
       for (const key of names) {
         const [id, fname] = NPC_ASSET_IDS[key];
-        const url = `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+        const url = assetFileUrl(id, fname);
         const asset = new pc.Asset(fname, "container", { url, filename: fname });
         asset.on("load", () => {
           this.assets[key] = asset;
@@ -2271,14 +2290,7 @@
       this._makeUi();
     }
     _url(id, fname) {
-      let q = "";
-      try {
-        const cfg = window.config;
-        const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
-        q = `?branchId=${bid}`;
-      } catch (e) {
-      }
-      return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+      return assetFileUrl(id, fname);
     }
     _load() {
       const [id, fname] = VM_ASSET;
@@ -2740,14 +2752,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._load();
     }
     _url(id, fname) {
-      let q = "";
-      try {
-        const cfg = window.config;
-        const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
-        q = `?branchId=${bid}`;
-      } catch (e) {
-      }
-      return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+      return assetFileUrl(id, fname);
     }
     _load() {
       const [id, fname] = TARGET_ASSET;
@@ -3343,14 +3348,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this.app.on("postrender", handler);
     }
     _assetUrl(id, fname) {
-      let q = "";
-      try {
-        const cfg = window.config;
-        const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
-        q = `?branchId=${bid}`;
-      } catch (e) {
-      }
-      return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+      return assetFileUrl(id, fname);
     }
     async _loadVoxel(scene) {
       if (scene.voxelData) return scene.voxelData;
@@ -3830,9 +3828,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         this._resolveUrl = async () => {
           let base = PARTY_URL;
           try {
-            const cfg = window.config;
-            const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
-            const r = await fetch(`${window.location.origin}/api/assets/${RELAY_URL_ASSET[0]}/file/${RELAY_URL_ASSET[1]}?branchId=${bid}`);
+            const r = await fetch(assetFileUrl(RELAY_URL_ASSET[0], RELAY_URL_ASSET[1]));
             if (r.ok) {
               const j = await r.json();
               if (j && j.url) base = j.url;
@@ -4093,14 +4089,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       for (const cfg of FRIENDS) this._load(cfg);
     }
     _url(id, fname) {
-      let q = "";
-      try {
-        const cfg = window.config;
-        const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
-        q = `?branchId=${bid}`;
-      } catch (e) {
-      }
-      return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+      return assetFileUrl(id, fname);
     }
     _load(cfg) {
       const asset = new pc.Asset(cfg.fname, "container", { url: this._url(cfg.assetId, cfg.fname), filename: cfg.fname });
@@ -4506,10 +4495,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._overlay.style.display = "flex";
       let bg = "", bg2 = "";
       try {
-        const cfg = window.config;
-        const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
-        bg = `${window.location.origin}/api/assets/299000418/file/title-bg.png?branchId=${bid}`;
-        bg2 = `${window.location.origin}/api/assets/299000831/file/title-bg-2.png?branchId=${bid}`;
+        bg = assetFileUrl(299000418, "title-bg.png");
+        bg2 = assetFileUrl(299000831, "title-bg-2.png");
       } catch (e) {
       }
       const key = (k, l) => `<span><span style="font-weight:600;color:var(--foreground)">${k}</span> <span style="color:rgba(250,250,250,0.5)">${l}</span></span>`;
@@ -4937,7 +4924,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
             return "";
           }
         })();
-        const au = (id, f) => `${window.location.origin}/api/assets/${id}/file/${f}${bq}`;
+        const au = (id, f) => assetFileUrl(id, f);
         pc.WasmModule.setConfig("Ammo", {
           glueUrl: au(298984312, "ammo.wasm.js"),
           wasmUrl: au(298984313, "ammo.wasm.wasm"),

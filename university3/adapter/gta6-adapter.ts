@@ -8,8 +8,32 @@ import { VoxelCollision } from './vendor/collision/voxel-collision';
 
 const pc: any = (globalThis as any).pc;
 
-const BUILD_TAG = 'v11-shadcn';
+const BUILD_TAG = 'v12-publish';
 console.log('[walk-collision] build', BUILD_TAG);
+
+/** Resolve an asset's file URL. Published builds (playcanv.as) have no
+ *  /api endpoint, but every asset is in the app registry with a bundled
+ *  file URL; the launch page has both, so registry-first works everywhere. */
+function assetFileUrl(id: number, fname: string): string {
+    try {
+        const getApp = (pc as any).AppBase?.getApplication || (pc as any).Application?.getApplication;
+        const app = getApp ? getApp.call((pc as any).AppBase || (pc as any).Application) : null;
+        // GLB uploads: the hardcoded id is the SOURCE asset, which published
+        // builds drop — the runtime container keeps the same file name, so
+        // fall back to a name lookup before giving up on the registry.
+        const reg = app && app.assets;
+        const a = reg && (reg.get(id) || (reg.find && reg.find(fname)));
+        const u = a && a.getFileUrl && a.getFileUrl();
+        if (u) return u;
+    } catch (e) { /* registry not ready — fall back to the editor API */ }
+    let q = '';
+    try {
+        const cfg = (window as any).config;
+        const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
+        q = `?branchId=${bid}`;
+    } catch (e) { /* default branch */ }
+    return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+}
 
 /** Keyboard move input scale (matches gta6 main.ts) */
 const MOVE_SPEED = 4;
@@ -387,7 +411,7 @@ class NpcSystem {
 
         for (const key of names) {
             const [id, fname] = NPC_ASSET_IDS[key];
-            const url = `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+            const url = assetFileUrl(id, fname);
             const asset = new pc.Asset(fname, 'container', { url, filename: fname });
             asset.on('load', () => {
                 this.assets[key] = asset;
@@ -1143,13 +1167,7 @@ class PropSystem {
 
     _load() {
         const [id, fname] = PROP_ASSET;
-        let q = '';
-        try {
-            const cfg = (window as any).config;
-            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
-            q = `?branchId=${bid}`;
-        } catch (e) { /* default */ }
-        const url = `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+        const url = assetFileUrl(id, fname);
         const asset = new pc.Asset(fname, 'container', { url, filename: fname });
         asset.on('load', () => this._spawn(asset));
         asset.on('error', (err: string) => console.error('prop asset failed:', fname, err));
@@ -1360,13 +1378,7 @@ class ViewmodelSystem {
     }
 
     _url(id: number, fname: string) {
-        let q = '';
-        try {
-            const cfg = (window as any).config;
-            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
-            q = `?branchId=${bid}`;
-        } catch (e) { /* default */ }
-        return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+        return assetFileUrl(id, fname);
     }
 
     _load() {
@@ -1868,13 +1880,7 @@ class TargetSystem {
     }
 
     _url(id: number, fname: string) {
-        let q = '';
-        try {
-            const cfg = (window as any).config;
-            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
-            q = `?branchId=${bid}`;
-        } catch (e) { /* default */ }
-        return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+        return assetFileUrl(id, fname);
     }
 
     _load() {
@@ -2488,13 +2494,7 @@ class SceneManager {
     }
 
     _assetUrl(id: number, fname: string) {
-        let q = '';
-        try {
-            const cfg = (window as any).config;
-            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
-            q = `?branchId=${bid}`;
-        } catch (e) { /* default */ }
-        return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+        return assetFileUrl(id, fname);
     }
 
     async _loadVoxel(scene: any) {
@@ -3026,9 +3026,7 @@ class NetSystem {
             this._resolveUrl = async () => {
                 let base = PARTY_URL;
                 try {
-                    const cfg = (window as any).config;
-                    const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
-                    const r = await fetch(`${window.location.origin}/api/assets/${RELAY_URL_ASSET[0]}/file/${RELAY_URL_ASSET[1]}?branchId=${bid}`);
+                    const r = await fetch(assetFileUrl(RELAY_URL_ASSET[0], RELAY_URL_ASSET[1]));
                     if (r.ok) {
                         const j = await r.json();
                         if (j && j.url) base = j.url;
@@ -3288,13 +3286,7 @@ class FriendSystem {
     }
 
     _url(id: number, fname: string) {
-        let q = '';
-        try {
-            const cfg = (window as any).config;
-            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
-            q = `?branchId=${bid}`;
-        } catch (e) { /* default */ }
-        return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+        return assetFileUrl(id, fname);
     }
 
     _load(cfg: any) {
@@ -3714,10 +3706,8 @@ class GameDirector {
         this._overlay.style.display = 'flex';
         let bg = '', bg2 = '';
         try {
-            const cfg = (window as any).config;
-            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
-            bg = `${window.location.origin}/api/assets/299000418/file/title-bg.png?branchId=${bid}`;
-            bg2 = `${window.location.origin}/api/assets/299000831/file/title-bg-2.png?branchId=${bid}`;
+            bg = assetFileUrl(299000418, 'title-bg.png');
+            bg2 = assetFileUrl(299000831, 'title-bg-2.png');
         } catch (e) { /* headless */ }
         const key = (k: string, l: string) =>
             `<span><span style="font-weight:600;color:var(--foreground)">${k}</span> <span style="color:rgba(250,250,250,0.5)">${l}</span></span>`;
@@ -4171,7 +4161,7 @@ WalkScript.prototype.initialize = function (this: any) {
                     return `?branchId=${bid}`;
                 } catch (e) { return ''; }
             })();
-            const au = (id: number, f: string) => `${window.location.origin}/api/assets/${id}/file/${f}${bq}`;
+            const au = (id: number, f: string) => assetFileUrl(id, f);
             pc.WasmModule.setConfig('Ammo', {
                 glueUrl: au(298984312, 'ammo.wasm.js'),
                 wasmUrl: au(298984313, 'ammo.wasm.wasm'),
