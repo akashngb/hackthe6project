@@ -1264,11 +1264,45 @@
       return out2;
     }
   };
+  var SoundKit = class {
+    constructor(app) {
+      __publicField(this, "app");
+      __publicField(this, "muted", false);
+      this.app = app;
+    }
+    _asset(name) {
+      const a = this.app.assets.find(name);
+      if (a && !a.resource && !a.loading) this.app.assets.load(a);
+      return a && a.resource ? a : null;
+    }
+    /** play a one-shot; returns the instance or null */
+    play(name, opts = {}) {
+      if (this.muted) return null;
+      try {
+        const a = this._asset(name);
+        if (!a) return null;
+        const inst = new pc.SoundInstance(this.app.systems.sound.manager, a.resource, {
+          volume: opts.volume ?? 0.7,
+          pitch: opts.pitch ?? 1,
+          loop: !!opts.loop
+        });
+        inst.play();
+        return inst;
+      } catch (e) {
+        return null;
+      }
+    }
+    playRandom(names, opts = {}) {
+      return this.play(names[Math.floor(Math.random() * names.length)], opts);
+    }
+  };
   var BALL_RADIUS = 0.12;
   var BALL_RESTITUTION = 0.55;
   var BALL_FRICTION = 0.985;
   var BALL_GRAVITY = 9.8;
   var MAX_BALLS = 48;
+  var BALL_MAX_BOUNCES = 3;
+  var BALL_BOUNCE_MIN_SPEED = 1;
   var THROW_SPEED = 8;
   var BallPhysics = class {
     constructor(app, collision) {
@@ -1295,7 +1329,8 @@
         mat.update();
         e.render.meshInstances[0].material = mat;
         e.setLocalScale(radius * 2, radius * 2, radius * 2);
-        e.setPosition(origin.x + dir.x * 0.4, origin.y + dir.y * 0.4, origin.z + dir.z * 0.4);
+        const off = radius * 1.5;
+        e.setPosition(origin.x + dir.x * off, origin.y + dir.y * off, origin.z + dir.z * off);
         this.app.root.addChild(e);
       } catch (err) {
         e = null;
@@ -1303,7 +1338,8 @@
       this.balls.push({
         entity: e,
         r: radius,
-        p: { x: origin.x + dir.x * 0.4, y: origin.y + dir.y * 0.4, z: origin.z + dir.z * 0.4 },
+        bounces: 0,
+        p: { x: origin.x + dir.x * radius * 1.5, y: origin.y + dir.y * radius * 1.5, z: origin.z + dir.z * radius * 1.5 },
         v: { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed }
       });
     }
@@ -1318,28 +1354,52 @@
       const push = this._push;
       const balls = this.balls;
       for (const b of balls) {
-        b.v.y -= BALL_GRAVITY * dt;
-        b.p.x += b.v.x * dt;
-        b.p.y += b.v.y * dt;
-        b.p.z += b.v.z * dt;
-        if (col.querySphere(b.p.x, b.p.y, b.p.z, b.r, push)) {
-          b.p.x += push.x;
-          b.p.y += push.y;
-          b.p.z += push.z;
-          const len = Math.sqrt(push.x * push.x + push.y * push.y + push.z * push.z);
-          if (len > 1e-9) {
-            const nx = push.x / len, ny = push.y / len, nz = push.z / len;
-            const vn = b.v.x * nx + b.v.y * ny + b.v.z * nz;
-            if (vn < 0) {
-              b.v.x -= (1 + BALL_RESTITUTION) * vn * nx;
-              b.v.y -= (1 + BALL_RESTITUTION) * vn * ny;
-              b.v.z -= (1 + BALL_RESTITUTION) * vn * nz;
-              b.v.x *= BALL_FRICTION;
-              b.v.y *= BALL_FRICTION;
-              b.v.z *= BALL_FRICTION;
+        const speed = Math.sqrt(b.v.x * b.v.x + b.v.y * b.v.y + b.v.z * b.v.z);
+        const frameMove = speed * dt;
+        const steps = Math.min(10, Math.max(1, Math.ceil(frameMove / Math.max(b.r * 0.75, 0.03))));
+        const sdt = dt / steps;
+        for (let s = 0; s < steps; s++) {
+          b.v.y -= BALL_GRAVITY * sdt;
+          const px = b.p.x, py = b.p.y, pz = b.p.z;
+          const mx = b.v.x * sdt, my = b.v.y * sdt, mz = b.v.z * sdt;
+          const moveDist = Math.sqrt(mx * mx + my * my + mz * mz);
+          b.p.x += mx;
+          b.p.y += my;
+          b.p.z += mz;
+          if (moveDist > 1e-6) {
+            const inv = 1 / moveDist;
+            const hit = col.queryRay(px, py, pz, mx * inv, my * inv, mz * inv, moveDist + b.r);
+            if (hit) {
+              const hx = hit.x - px, hy = hit.y - py, hz = hit.z - pz;
+              const hitDist = Math.sqrt(hx * hx + hy * hy + hz * hz);
+              if (hitDist < moveDist + b.r) {
+                const t = Math.max(0, hitDist - b.r) * inv;
+                b.p.x = px + mx * t;
+                b.p.y = py + my * t;
+                b.p.z = pz + mz * t;
+              }
             }
-            if (ny > 0.5 && Math.abs(b.v.y) < 0.3 && b.v.x * b.v.x + b.v.z * b.v.z < 0.04) {
-              b.v.y = 0;
+          }
+          if (col.querySphere(b.p.x, b.p.y, b.p.z, b.r, push)) {
+            b.p.x += push.x;
+            b.p.y += push.y;
+            b.p.z += push.z;
+            const len = Math.sqrt(push.x * push.x + push.y * push.y + push.z * push.z);
+            if (len > 1e-9) {
+              const nx = push.x / len, ny = push.y / len, nz = push.z / len;
+              const vn = b.v.x * nx + b.v.y * ny + b.v.z * nz;
+              if (vn < 0) {
+                if (vn < -BALL_BOUNCE_MIN_SPEED) b.bounces++;
+                b.v.x -= (1 + BALL_RESTITUTION) * vn * nx;
+                b.v.y -= (1 + BALL_RESTITUTION) * vn * ny;
+                b.v.z -= (1 + BALL_RESTITUTION) * vn * nz;
+                b.v.x *= BALL_FRICTION;
+                b.v.y *= BALL_FRICTION;
+                b.v.z *= BALL_FRICTION;
+              }
+              if (ny > 0.5 && Math.abs(b.v.y) < 0.3 && b.v.x * b.v.x + b.v.z * b.v.z < 0.04) {
+                b.v.y = 0;
+              }
             }
           }
         }
@@ -1400,6 +1460,12 @@
       for (const b of balls) {
         if (b.entity) b.entity.setPosition(b.p.x, b.p.y, b.p.z);
       }
+      for (let i = balls.length - 1; i >= 0; i--) {
+        if (balls[i].bounces > BALL_MAX_BOUNCES) {
+          if (balls[i].entity) balls[i].entity.destroy();
+          balls.splice(i, 1);
+        }
+      }
     }
   };
   var NPC_ASSET_IDS = {
@@ -1456,6 +1522,8 @@
       __publicField(this, "playerDead", false);
       __publicField(this, "onKill", null);
       __publicField(this, "onPlayerDamage", null);
+      __publicField(this, "sounds", null);
+      __publicField(this, "_lastSeeYou", 0);
       __publicField(this, "_desiredCount", 0);
       __publicField(this, "_push", { x: 0, y: 0, z: 0 });
       __publicField(this, "_screenPos");
@@ -1909,6 +1977,11 @@
               npc.state = "attack";
               npc.target = null;
               this._setAnim(npc, "Idle");
+              const nowSy = performance.now();
+              if (this.sounds && nowSy - this._lastSeeYou > 1500) {
+                this._lastSeeYou = nowSy;
+                this.sounds.playRandom(["seeyou1.mp3", "seeyou2.mp3", "seeyou3.mp3"], { volume: 0.8, pitch: 0.95 + Math.random() * 0.1 });
+              }
             }
           } else if (npc.state === "attack") {
             const stale = performance.now() - npc.lkpTime > NPC_LKP_MEMORY_MS;
@@ -1973,6 +2046,12 @@
               npc.flashOn = 0.05;
             }
             if (npc.muzzleLight) npc.muzzleLight.intensity = 3;
+            if (this.sounds) {
+              this.sounds.play("shoot.mp3", {
+                volume: 0.5 * Math.max(0.15, 1 - dist / 25),
+                pitch: 0.9 + Math.random() * 0.2
+              });
+            }
             const chance = NPC_BASE_HIT_CHANCE * Math.max(0.25, 1 - dist / (NPC_SIGHT_RANGE * 1.4));
             if (Math.random() < chance && this.onPlayerDamage) {
               this.onPlayerDamage(NPC_SHOT_DAMAGE - 2 + Math.random() * 4, npc);
@@ -2037,184 +2116,6 @@
       }
     }
   };
-  var PROP_ASSET = [298983207, "prop-mega-knight.glb"];
-  var PROP_HEIGHT_FACTOR = 0.65;
-  var PropSystem = class {
-    constructor(app, collision) {
-      __publicField(this, "app");
-      __publicField(this, "collision");
-      __publicField(this, "ready", false);
-      __publicField(this, "prop", null);
-      /** cylinder obstacles for BallPhysics: {x, z, radius, minY, maxY} */
-      __publicField(this, "obstacles", []);
-      this.app = app;
-      this.collision = collision;
-      this._load();
-    }
-    _load() {
-      const [id, fname] = PROP_ASSET;
-      let q = "";
-      try {
-        const cfg = window.config;
-        const bid = cfg && (cfg.self?.branch?.id || cfg.self?.branchId) || "87d9f884-5657-4343-887e-e823e912488f";
-        q = `?branchId=${bid}`;
-      } catch (e) {
-      }
-      const url = `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
-      const asset = new pc.Asset(fname, "container", { url, filename: fname });
-      asset.on("load", () => this._spawn(asset));
-      asset.on("error", (err) => console.error("prop asset failed:", fname, err));
-      this.app.assets.add(asset);
-      this.app.assets.load(asset);
-    }
-    _corridorStats() {
-      const col = this.collision;
-      const res = col.voxelResolution;
-      const midY = col.gridMinY + col.numVoxelsY * res * 0.5;
-      const gMaxX = col.gridMinX + col.numVoxelsX * res;
-      const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
-      const cs = [];
-      const floors = [];
-      for (let i = 0; i < 80 && cs.length < 30; i++) {
-        const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
-        const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
-        const down = col.queryRay(x, midY, z, 0, -1, 0, 30);
-        const up = col.queryRay(x, midY, z, 0, 1, 0, 30);
-        if (down && up) {
-          cs.push(up.y - down.y);
-          floors.push(down.y);
-        }
-      }
-      if (cs.length < 5) return { clearance: 2.4, floor: col.gridMinY };
-      cs.sort((a, b) => a - b);
-      floors.sort((a, b) => a - b);
-      return {
-        clearance: cs[Math.floor(cs.length / 2)],
-        floor: floors[Math.floor(floors.length / 2)]
-      };
-    }
-    _validSpot(x, z, stats, targetHeight) {
-      const col = this.collision;
-      const res = col.voxelResolution;
-      const midY = col.gridMinY + col.numVoxelsY * res * 0.5;
-      const down = col.queryRay(x, midY, z, 0, -1, 0, 30);
-      if (!down) return null;
-      if (Math.abs(down.y - stats.floor) > 0.4) return null;
-      const up = col.queryRay(x, down.y + 0.2, z, 0, 1, 0, 30);
-      if (up && up.y - down.y < targetHeight + 0.15) return null;
-      if (!col.isFreeAt(x, down.y + 0.6, z)) return null;
-      if (!col.isFreeAt(x, down.y + 1.2, z)) return null;
-      return { x, y: down.y, z };
-    }
-    _spawn(asset) {
-      const col = this.collision;
-      const res = col.voxelResolution;
-      const midX = col.gridMinX + col.numVoxelsX * res * 0.5;
-      const midZ = col.gridMinZ + col.numVoxelsZ * res * 0.5;
-      const gMaxX = col.gridMinX + col.numVoxelsX * res;
-      const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
-      const stats = this._corridorStats();
-      const targetHeight = stats.clearance * PROP_HEIGHT_FACTOR;
-      let spot = null;
-      for (const dz of [-4, 4, -6, 6, -2, 2, 0, -8, 8]) {
-        spot = this._validSpot(midX, midZ + dz, stats, targetHeight);
-        if (spot) break;
-      }
-      for (let i = 0; !spot && i < 150; i++) {
-        const x = col.gridMinX + 0.4 + Math.random() * (gMaxX - col.gridMinX - 0.8);
-        const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
-        spot = this._validSpot(x, z, stats, targetHeight);
-      }
-      if (!spot) {
-        console.warn("prop: no floor spot found");
-        return;
-      }
-      console.log("propSystem: placing at", spot.x.toFixed(2), spot.y.toFixed(2), spot.z.toFixed(2), "floor median", stats.floor.toFixed(2));
-      const root = new pc.Entity("mega-knight");
-      const model = asset.resource.instantiateRenderEntity();
-      root.addChild(model);
-      this.app.root.addChild(root);
-      root.setPosition(spot.x, spot.y, spot.z);
-      root.setEulerAngles(0, spot.z < midZ ? 0 : 180, 0);
-      this.prop = {
-        root,
-        model,
-        p: spot,
-        targetHeight,
-        fit: { phase: "scale", wait: 3 }
-      };
-    }
-    _measure(model) {
-      let min = null, max = null;
-      const rs = model.findComponents("render");
-      for (const r of rs) {
-        for (const mi of r.meshInstances) {
-          const mn = mi.aabb.getMin(), mx = mi.aabb.getMax();
-          if (!min) {
-            min = { x: mn.x, y: mn.y, z: mn.z };
-            max = { x: mx.x, y: mx.y, z: mx.z };
-          } else {
-            min.x = Math.min(min.x, mn.x);
-            min.y = Math.min(min.y, mn.y);
-            min.z = Math.min(min.z, mn.z);
-            max.x = Math.max(max.x, mx.x);
-            max.y = Math.max(max.y, mx.y);
-            max.z = Math.max(max.z, mx.z);
-          }
-        }
-      }
-      if (!min) return null;
-      return {
-        minY: min.y,
-        center: { x: (min.x + max.x) * 0.5, y: (min.y + max.y) * 0.5, z: (min.z + max.z) * 0.5 },
-        ext: { x: max.x - min.x, y: max.y - min.y, z: max.z - min.z }
-      };
-    }
-    step(dt) {
-      const prop = this.prop;
-      if (!prop || !prop.fit) return;
-      const fit = prop.fit;
-      if (fit.wait > 0) {
-        fit.wait--;
-        return;
-      }
-      const m = this._measure(prop.model);
-      if (!m || !isFinite(m.ext.y) || m.ext.y <= 0.01) {
-        fit.wait = 3;
-        return;
-      }
-      if (fit.phase === "scale") {
-        const cur = prop.model.getLocalScale().x;
-        const scale = cur * (prop.targetHeight / m.ext.y);
-        prop.model.setLocalScale(scale, scale, scale);
-        console.log("propSystem: mega knight height", m.ext.y.toFixed(2), "\u2192 scale", scale.toFixed(4), "target", prop.targetHeight.toFixed(2));
-        fit.phase = "ground";
-        fit.wait = 2;
-      } else if (fit.phase === "ground") {
-        const ws = new pc.Vec3(
-          prop.p.x - m.center.x,
-          prop.p.y - m.minY,
-          prop.p.z - m.center.z
-        );
-        const inv = prop.root.getRotation().clone().invert();
-        const ls = inv.transformVector(ws, new pc.Vec3());
-        const lp = prop.model.getLocalPosition();
-        prop.model.setLocalPosition(lp.x + ls.x, lp.y + ls.y, lp.z + ls.z);
-        console.log("propSystem: recentered by", ws.x.toFixed(2), ws.y.toFixed(2), ws.z.toFixed(2));
-        const radius = Math.max(m.ext.x, m.ext.z) * 0.4;
-        this.obstacles.length = 0;
-        this.obstacles.push({
-          x: prop.p.x,
-          z: prop.p.z,
-          radius,
-          minY: prop.p.y,
-          maxY: prop.p.y + prop.targetHeight
-        });
-        prop.fit = null;
-        this.ready = true;
-      }
-    }
-  };
   var VM_ASSET = [298983917, "fps-carbine.glb"];
   var VM_POS = [0.239, -0.563, -0.201];
   var VM_ROT = [90, 2.89, 180];
@@ -2250,6 +2151,8 @@
       __publicField(this, "_flashOn", 0);
       __publicField(this, "_ammoDiv", null);
       __publicField(this, "balls", null);
+      __publicField(this, "sounds", null);
+      __publicField(this, "_dryT", 0);
       this.app = app;
       this.collision = collision;
       this.cameraEntity = cameraEntity;
@@ -2358,12 +2261,14 @@
       if (!this.ready || this.reloading || this.ammo === VM_MAG_SIZE) return;
       this.reloading = true;
       this.play("reload");
+      if (this.sounds) this.sounds.playRandom(["carbineReloadA.wav", "carbineReloadB.wav"], { volume: 0.7 });
       this._updateAmmo();
     }
     _fire() {
       this.ammo--;
       this._cooldown = VM_FIRE_INTERVAL;
       this.play("shoot");
+      if (this.sounds) this.sounds.play("shoot3.wav", { volume: 0.55, pitch: 0.92 + Math.random() * 0.16 });
       if (this.balls) {
         const f = this.cameraEntity.forward;
         let ox, oy, oz;
@@ -2379,6 +2284,22 @@
           ox = p.x + r.x * 0.22 - u.x * 0.18 + f.x * 0.3;
           oy = p.y + r.y * 0.22 - u.y * 0.18 + f.y * 0.3;
           oz = p.z + r.z * 0.22 - u.z * 0.18 + f.z * 0.3;
+        }
+        const cp = this.cameraEntity.getPosition();
+        const sx = ox - cp.x, sy = oy - cp.y, sz = oz - cp.z;
+        const sd = Math.sqrt(sx * sx + sy * sy + sz * sz);
+        if (sd > 1e-6) {
+          const wallHit = this.collision.queryRay(cp.x, cp.y, cp.z, sx / sd, sy / sd, sz / sd, sd + VM_BALL_RADIUS);
+          if (wallHit) {
+            const wx = wallHit.x - cp.x, wy = wallHit.y - cp.y, wz = wallHit.z - cp.z;
+            const wd = Math.sqrt(wx * wx + wy * wy + wz * wz);
+            if (wd < sd + VM_BALL_RADIUS) {
+              const t = Math.max(0, (wd - VM_BALL_RADIUS * 2) / sd);
+              ox = cp.x + sx * t;
+              oy = cp.y + sy * t;
+              oz = cp.z + sz * t;
+            }
+          }
         }
         this.balls.throwBall({ x: ox, y: oy, z: oz }, { x: f.x, y: f.y, z: f.z }, VM_BALL_SPEED, VM_BALL_RADIUS);
       }
@@ -2407,6 +2328,12 @@
       }
       if (this.shooting && !this.reloading && this._cooldown <= 0 && this.ammo > 0) {
         this._fire();
+      } else if (this.shooting && this.reloading) {
+        this._dryT -= dt;
+        if (this._dryT <= 0 && this.sounds) {
+          this._dryT = 0.4;
+          this.sounds.play("dryfire.wav", { volume: 0.45 });
+        }
       }
     }
   };
@@ -2655,6 +2582,144 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       }
     }
   };
+  var VOXVIEW_RADIUS = 9;
+  var VOXVIEW_REBUILD_DIST = 2.5;
+  var VOXVIEW_MAX_FACES = 15e4;
+  var VoxelDebugView = class {
+    constructor(app, collision) {
+      __publicField(this, "app");
+      __publicField(this, "collision");
+      __publicField(this, "enabled", false);
+      __publicField(this, "entity", null);
+      __publicField(this, "_lastPos", { x: 1e9, y: 1e9, z: 1e9 });
+      __publicField(this, "_gridTex", null);
+      this.app = app;
+      this.collision = collision;
+    }
+    /** 64x64 canvas texture: translucent white fill, dark cell border */
+    _gridTexture() {
+      if (this._gridTex) return this._gridTex;
+      const c = document.createElement("canvas");
+      c.width = 64;
+      c.height = 64;
+      const g = c.getContext("2d");
+      g.clearRect(0, 0, 64, 64);
+      g.fillStyle = "rgba(255,255,255,0.30)";
+      g.fillRect(0, 0, 64, 64);
+      g.strokeStyle = "rgba(25,25,30,0.9)";
+      g.lineWidth = 5;
+      g.strokeRect(0, 0, 64, 64);
+      const tex = new pc.Texture(this.app.graphicsDevice, {
+        width: 64,
+        height: 64,
+        format: pc.PIXELFORMAT_R8_G8_B8_A8,
+        mipmaps: true
+      });
+      tex.setSource(c);
+      tex.minFilter = pc.FILTER_LINEAR_MIPMAP_LINEAR;
+      tex.magFilter = pc.FILTER_LINEAR;
+      this._gridTex = tex;
+      return tex;
+    }
+    toggle() {
+      this.enabled = !this.enabled;
+      if (!this.enabled) this._clear();
+      else this._lastPos.x = 1e9;
+      return this.enabled;
+    }
+    _clear() {
+      if (this.entity) {
+        this.entity.destroy();
+        this.entity = null;
+      }
+    }
+    update(entity) {
+      if (!this.enabled) return;
+      const camPos = entity.getPosition();
+      const dx = camPos.x - this._lastPos.x;
+      const dy = camPos.y - this._lastPos.y;
+      const dz = camPos.z - this._lastPos.z;
+      if (dx * dx + dy * dy + dz * dz < VOXVIEW_REBUILD_DIST * VOXVIEW_REBUILD_DIST) return;
+      this._lastPos = { x: camPos.x, y: camPos.y, z: camPos.z };
+      this._rebuild(camPos);
+    }
+    _rebuild(camPos) {
+      const col = this.collision;
+      const res = col.voxelResolution;
+      const ix0 = Math.max(0, Math.floor((camPos.x - VOXVIEW_RADIUS - col.gridMinX) / res));
+      const iy0 = Math.max(0, Math.floor((camPos.y - VOXVIEW_RADIUS - col.gridMinY) / res));
+      const iz0 = Math.max(0, Math.floor((camPos.z - VOXVIEW_RADIUS - col.gridMinZ) / res));
+      const ix1 = Math.min(col.numVoxelsX - 1, Math.floor((camPos.x + VOXVIEW_RADIUS - col.gridMinX) / res));
+      const iy1 = Math.min(col.numVoxelsY - 1, Math.floor((camPos.y + VOXVIEW_RADIUS - col.gridMinY) / res));
+      const iz1 = Math.min(col.numVoxelsZ - 1, Math.floor((camPos.z + VOXVIEW_RADIUS - col.gridMinZ) / res));
+      const FACES = [
+        [1, 0, 0, [1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]],
+        [-1, 0, 0, [0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]],
+        [0, 1, 0, [0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]],
+        [0, -1, 0, [0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
+        [0, 0, 1, [1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]],
+        [0, 0, -1, [0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]]
+      ];
+      const positions = [];
+      const uvs = [];
+      const normals = [];
+      const indices = [];
+      const CORNER_UV = [[0, 0], [1, 0], [1, 1], [0, 1]];
+      let faces = 0;
+      outer:
+        for (let iz = iz0; iz <= iz1; iz++) {
+          for (let iy = iy0; iy <= iy1; iy++) {
+            for (let ix = ix0; ix <= ix1; ix++) {
+              if (!col.isVoxelSolid(ix, iy, iz)) continue;
+              for (const f of FACES) {
+                if (col.isVoxelSolid(ix + f[0], iy + f[1], iz + f[2])) continue;
+                const base = positions.length / 3;
+                for (let c = 3; c < 7; c++) {
+                  const o = f[c];
+                  positions.push(
+                    col.gridMinX + (ix + o[0]) * res,
+                    col.gridMinY + (iy + o[1]) * res,
+                    col.gridMinZ + (iz + o[2]) * res
+                  );
+                  uvs.push(CORNER_UV[c - 3][0], CORNER_UV[c - 3][1]);
+                  normals.push(f[0], f[1], f[2]);
+                }
+                indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+                if (++faces >= VOXVIEW_MAX_FACES) break outer;
+              }
+            }
+          }
+        }
+      this._clear();
+      if (!positions.length) return;
+      try {
+        const mesh = new pc.Mesh(this.app.graphicsDevice);
+        mesh.setPositions(positions);
+        mesh.setNormals(normals);
+        mesh.setUvs(0, uvs);
+        mesh.setIndices(indices);
+        mesh.update(pc.PRIMITIVE_TRIANGLES);
+        const mat = new pc.StandardMaterial();
+        mat.diffuse.set(0, 0, 0);
+        mat.emissive.set(1, 1, 1);
+        mat.emissiveMap = this._gridTexture();
+        mat.opacityMap = this._gridTexture();
+        mat.opacityMapChannel = "a";
+        mat.blendType = pc.BLEND_NORMAL;
+        mat.depthWrite = false;
+        mat.cull = pc.CULLFACE_NONE;
+        mat.update();
+        const mi = new pc.MeshInstance(mesh, mat);
+        const e = new pc.Entity("voxel-debug");
+        e.addComponent("render", { meshInstances: [mi] });
+        this.app.root.addChild(e);
+        this.entity = e;
+        console.log("voxelView:", faces, "faces");
+      } catch (e) {
+        console.warn("voxelView rebuild failed", e);
+      }
+    }
+  };
   var THEME_BG = "#0d1117";
   var WAVE_INTERMISSION = 5;
   var PLAYER_MAX_HP = 100;
@@ -2671,7 +2736,10 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       __publicField(this, "_regenT", 0);
       __publicField(this, "_interT", 0);
       __publicField(this, "npcs");
+      __publicField(this, "sounds", null);
       __publicField(this, "onRestart", null);
+      __publicField(this, "_ambient", null);
+      __publicField(this, "_lastPain", 0);
       __publicField(this, "_overlay");
       __publicField(this, "_banner");
       __publicField(this, "_hud");
@@ -2725,6 +2793,10 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this._overlay.style.display = "none";
       this.npcs.playerDead = false;
       this.npcs.combatEnabled = true;
+      if (this.sounds && !this._ambient) {
+        this._ambient = this.sounds.play("room.mp3", { volume: 0.3, loop: true });
+      }
+      if (this.sounds) this.sounds.play("carbineReady.wav", { volume: 0.6 });
       this._nextWave();
       const canvas = window.walk?.script?.app?.graphicsDevice?.canvas;
       if (canvas) canvas.requestPointerLock();
@@ -2761,6 +2833,11 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       if (this.state !== "playing") return;
       this.hp = Math.max(0, this.hp - dmg);
       this._regenT = HP_REGEN_DELAY;
+      const nowP = performance.now();
+      if (this.sounds && nowP - this._lastPain > 300) {
+        this._lastPain = nowP;
+        this.sounds.playRandom(["pain1.mp3", "pain2.mp3", "pain3.mp3", "pain4.mp3"], { volume: 0.7, pitch: 0.9 + Math.random() * 0.2 });
+      }
       this._vignette.style.opacity = "1";
       setTimeout(() => {
         this._vignette.style.opacity = "0";
@@ -2948,6 +3025,12 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
             if (m) self._labels.deleteMarker(m);
           }
           break;
+        case "KeyB":
+          if (down && self._voxelView) {
+            const on = self._voxelView.toggle();
+            console.log("voxel view", on ? "ON" : "OFF");
+          }
+          break;
         case "Backquote":
           if (down && self._hud) {
             self._hudHidden = !self._hudHidden;
@@ -3046,6 +3129,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       }
     } catch (e) {
     }
+    this._sounds = new SoundKit(this.app);
+    this._voxelView = new VoxelDebugView(this.app, collision);
     this._balls = new BallPhysics(this.app, collision);
     this._labels = new LabelSystem(this.app, collision, this.entity);
     try {
@@ -3054,20 +3139,18 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       console.error("npc system init failed", e);
       this._npcs = null;
     }
-    try {
-      this._props = new PropSystem(this.app, collision);
-    } catch (e) {
-      console.error("prop system init failed", e);
-      this._props = null;
-    }
+    this._props = null;
     try {
       this._viewmodel = new ViewmodelSystem(this.app, collision, this.entity, this._npcs, this._balls);
     } catch (e) {
       console.error("viewmodel init failed", e);
       this._viewmodel = null;
     }
+    if (this._npcs) this._npcs.sounds = this._sounds;
+    if (this._viewmodel) this._viewmodel.sounds = this._sounds;
     try {
       this._director = this._npcs ? new GameDirector(this._npcs) : null;
+      if (this._director) this._director.sounds = this._sounds;
       if (this._director) {
         this._director.onRestart = () => {
           if (this._balls) this._balls.clear();
@@ -3100,9 +3183,15 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     if (this._npcs) this._npcs.step(Math.min(dt, 0.05), this._balls ? this._balls.balls : []);
     if (this._viewmodel) this._viewmodel.step(dt);
     if (this._director) this._director.update(dt);
+    if (this._voxelView) this._voxelView.update(this.entity);
     if (this._labels) this._labels.update();
     const keys = this._keys;
     if (this._flyMode) {
+      if (this._stepsInst) {
+        this._stepsInst.stop();
+        this._stepsInst = null;
+        this._stepsMode = "none";
+      }
       const mx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
       const mz = (keys.forward ? 1 : 0) - (keys.backward ? 1 : 0);
       const my = (keys.up || keys.jump ? 1 : 0) - (keys.down ? 1 : 0);
@@ -3127,6 +3216,17 @@ Y = walk mode | WASD + E/Q up/down | Shift fast`;
     }
     const x = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
     const z = (keys.forward ? 1 : 0) - (keys.backward ? 1 : 0);
+    const stepMode = x !== 0 || z !== 0 ? keys.run ? "run" : "walk" : "none";
+    if (stepMode !== this._stepsMode) {
+      if (this._stepsInst) {
+        this._stepsInst.stop();
+        this._stepsInst = null;
+      }
+      this._stepsMode = stepMode;
+      if (stepMode !== "none" && this._sounds) {
+        this._stepsInst = this._sounds.play(stepMode === "run" ? "steps-running.mp3" : "steps.mp3", { volume: 0.4, loop: true });
+      }
+    }
     if (x || z) {
       const scale = MOVE_SPEED * dt * (keys.run ? RUN_MULTIPLIER : 1);
       this._frame.deltas.move.append([x * scale, 0, z * scale]);
@@ -3144,7 +3244,7 @@ Y = walk mode | WASD + E/Q up/down | Shift fast`;
       this._hudT = 0;
       this._hud.textContent = `pos ${wp.x.toFixed(2)} ${wp.y.toFixed(2)} ${wp.z.toFixed(2)}
 LMB shoot | R reload | WASD Space Shift | Y fly | F respawn | G ball | C clear
-X label object | V remove/restore | [ ] size | L labels | Backspace delete`;
+X label | V remove | [ ] size | L labels | Backspace delete | B voxels`;
     }
   };
 })();

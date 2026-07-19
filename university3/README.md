@@ -90,7 +90,19 @@ await fetch('/api/assets/298979018', { method: 'PUT', body: fd });
 | V | remove/restore aimed labeled object (splats vanish + collision carved) |
 | [ / ] | shrink / grow aimed label sphere |
 | L | toggle labels · Backspace delete label |
+| B | toggle the collision voxel view (supersplat-style grid) |
 | ` | toggle the green debug HUD |
+
+## Physics & audio notes
+
+Balls use substepped swept collision (max ~3/4 radius of travel per check +
+a voxel raycast along each substep's path), so even 16 m/s carbine rounds
+cannot tunnel through the scan's one-voxel-thin walls. Balls despawn after
+3 solid impacts (soft/rolling contact doesn't count). 20 sound effects from
+the original project are wired: carbine shots/reloads/dryfire, distance-
+scaled NPC gunfire, "I see you" callouts, pain grunts, walk/run footsteps,
+and room ambience. `test/test-containment.mjs` fires 40 random fast balls
+at 30fps and asserts none leave the collision grid.
 
 ## Gameplay (SIEGE)
 
