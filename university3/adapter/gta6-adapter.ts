@@ -313,7 +313,7 @@ const NPC_PERSONALITIES = [
 /** combat tuning (from npc-controller.js / npc-ai.js, rebalanced for gameplay) */
 const NPC_SIGHT_RANGE = 22;
 /** soldiers must be this close before they open fire (they advance otherwise) */
-const NPC_FIRE_RANGE = 11;
+const NPC_FIRE_RANGE = 6;
 const NPC_HEARING_RANGE = 3;
 const NPC_LKP_MEMORY_MS = 10000;
 const NPC_SHOT_DAMAGE = 8;
@@ -1018,7 +1018,7 @@ class NpcSystem {
 
                 // advance until inside firing range; aggressive personalities
                 // keep pushing to point-blank (npc-ai.js _pushing)
-                const holdDist = npc.pers.aggression > 0.6 ? 6 : NPC_FIRE_RANGE * 0.85;
+                const holdDist = npc.pers.aggression > 0.6 ? 3 : NPC_FIRE_RANGE * 0.85;
                 if (dist > holdDist) {
                     const nx = dx / dist, nz = dz / dist;
                     npc.p.x += nx * NPC_WALK_SPEED * this.walkSpeedMul * dt;
@@ -3266,6 +3266,7 @@ const FRIENDS: any[] = [
     { name: 'Akash', assetId: 298998118, fname: 'friend-akash.glb' },
     { name: 'Kelly', assetId: 298998127, fname: 'friend-kelly.glb' }
 ];
+const FRIENDS_ENABLED = false; // human NPCs hidden
 const FRIEND_HEIGHT = 1.72;
 const FRIEND_SPEED = 1.0;
 
@@ -3308,6 +3309,7 @@ class FriendSystem {
     }
 
     _spawn(cfg: any) {
+        if (!FRIENDS_ENABLED) return;
         const sc = this.scenes ? SCENES[this.scenes.current] : null;
         if (sc && sc.noNpcs) return;
         try {

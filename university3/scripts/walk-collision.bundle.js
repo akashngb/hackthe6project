@@ -1502,7 +1502,7 @@
     { name: "Grumps", aggression: 0.6, randomness: 0.2 }
   ];
   var NPC_SIGHT_RANGE = 22;
-  var NPC_FIRE_RANGE = 11;
+  var NPC_FIRE_RANGE = 6;
   var NPC_HEARING_RANGE = 3;
   var NPC_LKP_MEMORY_MS = 1e4;
   var NPC_SHOT_DAMAGE = 8;
@@ -2130,7 +2130,7 @@
           while (dyaw > 180) dyaw -= 360;
           while (dyaw < -180) dyaw += 360;
           npc.yaw += Math.max(-360 * dt, Math.min(360 * dt, dyaw));
-          const holdDist = npc.pers.aggression > 0.6 ? 6 : NPC_FIRE_RANGE * 0.85;
+          const holdDist = npc.pers.aggression > 0.6 ? 3 : NPC_FIRE_RANGE * 0.85;
           if (dist > holdDist) {
             const nx = dx / dist, nz = dz / dist;
             npc.p.x += nx * NPC_WALK_SPEED * this.walkSpeedMul * dt;
@@ -4073,6 +4073,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
     { name: "Akash", assetId: 298998118, fname: "friend-akash.glb" },
     { name: "Kelly", assetId: 298998127, fname: "friend-kelly.glb" }
   ];
+  var FRIENDS_ENABLED = false;
   var FRIEND_HEIGHT = 1.72;
   var FRIEND_SPEED = 1;
   var FriendSystem = class {
@@ -4112,6 +4113,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       this.app.assets.load(asset);
     }
     _spawn(cfg) {
+      if (!FRIENDS_ENABLED) return;
       const sc = this.scenes ? SCENES[this.scenes.current] : null;
       if (sc && sc.noNpcs) return;
       try {
