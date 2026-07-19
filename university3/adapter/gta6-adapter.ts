@@ -339,6 +339,9 @@ class NpcSystem {
     npcRadius = NPC_RADIUS;
     walkSpeedMul = 1;
     combatEnabled = false;
+    /** authoritative player position (walk controller state); falls back to
+     *  the camera entity, which lags one frame behind teleports */
+    getPlayerPos: any = null;
     playerDead = false;
     onKill: any = null;
     onPlayerDamage: any = null;
@@ -354,6 +357,10 @@ class NpcSystem {
         this.cameraEntity = cameraEntity;
         this._screenPos = new pc.Vec3();
         this._loadAssets();
+    }
+
+    _playerPos() {
+        return this.getPlayerPos ? this.getPlayerPos() : this.cameraEntity.getPosition();
     }
 
     _branchQuery() {
@@ -489,21 +496,42 @@ class NpcSystem {
         const res = col.voxelResolution;
         const gMaxX = col.gridMinX + col.numVoxelsX * res;
         const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
-        const midY = col.gridMinY + col.numVoxelsY * res * 0.5;
 
-        for (let attempt = 0; attempt < 80; attempt++) {
-            const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
-            const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
-            const down = col.queryRay(x, midY, z, 0, -1, 0, 20);
-            if (!down) continue;
-            const floor = down.y;
-            // need standing headroom and free space at torso
-            const up = col.queryRay(x, floor + 0.2, z, 0, 1, 0, 20);
-            if (up && up.y - floor < this.npcHeight + 0.1) continue;
-            if (!col.isFreeAt(x, floor + 0.9, z)) continue;
-            return { x, y: floor, z };
-        }
-        return null;
+        // soldiers belong on the player's storey: probe down from just above
+        // the player's head so multi-level scans don't put them on balconies
+        // or mezzanines, and require the found floor to match the player's
+        const pp = this._playerPos();
+        const playerFloor = pp.y - 1.5; // eye 1.3 + hover 0.2
+        const probeY = pp.y + 0.6;
+
+        const tryOnce = (strict: boolean) => {
+            for (let attempt = 0; attempt < (strict ? 120 : 80); attempt++) {
+                const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
+                const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
+
+                if (strict) {
+                    const ddx = x - pp.x, ddz = z - pp.z;
+                    const dd = Math.sqrt(ddx * ddx + ddz * ddz);
+                    if (dd < 4 || dd > 28) continue;
+                }
+
+                const fromY = strict ? probeY : col.gridMinY + col.numVoxelsY * res * 0.5;
+                const down = col.queryRay(x, fromY, z, 0, -1, 0, 20);
+                if (!down) continue;
+                const floor = down.y;
+                if (strict && Math.abs(floor - playerFloor) > 1.2) continue;
+
+                const up = col.queryRay(x, floor + 0.2, z, 0, 1, 0, 20);
+                if (up && up.y - floor < this.npcHeight + 0.1) continue;
+                if (!col.isFreeAt(x, floor + 0.9, z)) continue;
+                return { x, y: floor, z };
+            }
+            return null;
+        };
+
+        // strict (same storey, sensible range) first; relax only if the
+        // scan simply doesn't have enough valid same-storey area
+        return tryOnce(true) || tryOnce(false);
     }
 
     _spawnNpc(seed: number) {
@@ -617,7 +645,7 @@ class NpcSystem {
 
     /** line of sight from npc chest to the player eye (voxel raycast + hearing) */
     _hasLineOfSight(npc: any) {
-        const pp = this.cameraEntity.getPosition();
+        const pp = this._playerPos();
         const fx = npc.p.x, fy = npc.p.y + this.npcHeight * 0.75, fz = npc.p.z;
         const dx = pp.x - fx, dy = pp.y - fy, dz = pp.z - fz;
         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -822,7 +850,7 @@ class NpcSystem {
                     npc.percT = 0.15;
                     npc.canSee = this._hasLineOfSight(npc);
                 }
-                const pp = this.cameraEntity.getPosition();
+                const pp = this._playerPos();
                 const pdx = pp.x - npc.p.x, pdz = pp.z - npc.p.z;
                 const pdist = Math.sqrt(pdx * pdx + pdz * pdz);
 
@@ -873,7 +901,7 @@ class NpcSystem {
             if (npc.state === 'dead') continue;
 
             if (npc.state === 'attack') {
-                const pp = this.cameraEntity.getPosition();
+                const pp = this._playerPos();
                 const dx = pp.x - npc.p.x, dz = pp.z - npc.p.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
 
@@ -2126,7 +2154,7 @@ const SCENES: any[] = [
         rot: [0, 0, 180],
         noSoldiers: true,
         portals: [
-            { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 0, label: '→ Bahen 5F' }
+            { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 4, label: '→ Bahen Hallway' }
         ]
     },
     {
@@ -2134,8 +2162,22 @@ const SCENES: any[] = [
         gsplatId: 298987763,
         voxelJson: [298987764, 'classroom.voxel.json'],
         voxelBin: [298987765, 'classroom.voxel.bin'],
-        spawn: null, // grid center
-        rot: [0, 0, 180]
+        spawn: { x: -1.54, y: 0.3, z: -6.26 },
+        rot: [0, 0, 180],
+        portals: [
+            { x: -1.54, y: 0.3, z: -6.26, radius: 1.4, to: 4, spawnAt: { x: 9.46, y: 0.42, z: 7.25 }, label: '→ Bahen Hallway' }
+        ]
+    },
+    {
+        name: 'Bahen Hallway',
+        gsplatId: 298988208,
+        voxelJson: [298988209, 'bahen-hallway.voxel.json'],
+        voxelBin: [298988210, 'bahen-hallway.voxel.bin'],
+        spawn: { x: -1.26, y: 0.36, z: -2.72 },
+        rot: [0, 0, 180],
+        portals: [
+            { x: 9.46, y: 0.42, z: 7.25, radius: 1.4, to: 3, label: '→ Classroom' }
+        ]
     }
 ];
 
@@ -2265,7 +2307,7 @@ class SceneManager {
             el.textContent = cfg.label || 'portal';
             document.body.appendChild(el);
 
-            this._portals.push({ cfg, ent, el });
+            this._portals.push({ cfg, ent, el, armed: false });
         }
         if (!this._screenPos) this._screenPos = new pc.Vec3();
     }
@@ -2291,14 +2333,21 @@ class SceneManager {
                 }
             }
             const dx = p.x - c.x, dy = p.y - c.y, dz = p.z - c.z;
-            if (dx * dx + dy * dy + dz * dz < c.radius * c.radius) {
-                this.switchTo(c.to);
+            const d2 = dx * dx + dy * dy + dz * dz;
+            if (!pt.armed) {
+                // arms once the player steps clear (prevents instant
+                // bounce-back when a portal sits on the arrival spawn)
+                if (d2 > c.radius * c.radius * 2.6) pt.armed = true;
+                continue;
+            }
+            if (d2 < c.radius * c.radius) {
+                this.switchTo(c.to, c.spawnAt || null);
                 return;
             }
         }
     }
 
-    async switchTo(i: number) {
+    async switchTo(i: number, spawnAt: any = null) {
         if (this._busy || i === this.current) return;
         this._busy = true;
         const scene = SCENES[i];
@@ -2343,7 +2392,7 @@ class SceneManager {
 
             // 4) respawn the player
             const col = this.collision;
-            const sp = scene.spawn || {
+            const sp = spawnAt || scene.spawn || {
                 x: col.gridMinX + col.numVoxelsX * col.voxelResolution * 0.5,
                 y: col.gridMinY + col.numVoxelsY * col.voxelResolution * 0.5,
                 z: col.gridMinZ + col.numVoxelsZ * col.voxelResolution * 0.5
@@ -2891,7 +2940,10 @@ WalkScript.prototype.initialize = function (this: any) {
         console.error('viewmodel init failed', e);
         this._viewmodel = null;
     }
-    if (this._npcs) this._npcs.sounds = this._sounds;
+    if (this._npcs) {
+        this._npcs.sounds = this._sounds;
+        this._npcs.getPlayerPos = () => walkCamera.position;
+    }
     if (this._viewmodel) this._viewmodel.sounds = this._sounds;
     try {
         this._targets = new TargetSystem(this.app, collision, this._sounds);
@@ -2901,6 +2953,8 @@ WalkScript.prototype.initialize = function (this: any) {
     }
     try {
         this._scenes = new SceneManager(this.app, collision, controller, walkCamera, this);
+        // the game opens outside the building
+        this._scenes.switchTo(2);
     } catch (e) {
         console.error('scene manager init failed', e);
         this._scenes = null;
