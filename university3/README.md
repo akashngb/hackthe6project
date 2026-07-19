@@ -155,8 +155,8 @@ no soldiers, no wandering friends, no requisitioned units ever spawn there
 (the friend spawner checks the flag on every spawn path, including late
 asset loads). The game opens at Bahen Front
 (outdoor `noSoldiers` safe zone). Portal network: Bahen Front door at
-(2.64, 1.65, 7.08) → Bahen Stairs (arriving at 0.04, 0.21, -1.22, which is
-also the stairs' pinned spawn); Bahen Hallway (spawn -1.26, 0.36,
+(2.64, 1.65, 7.08) → Bahen Stairs (arriving at world (0.04, 0.21, 1.22) — the coord pill shows -z, so it reads
+as "0.04, 0.21, -1.22" in-game; also the stairs' pinned spawn); Bahen Hallway (spawn -1.26, 0.36,
 -2.72) has a doorway at (9.46, 0.42, 7.25) ⇄ Bahen Classroom (spawn
 -1.54, 0.3, -6.26, which doubles as the return portal — portals arm only
 after the player steps clear, preventing instant bounce-back). Bahen 5F
