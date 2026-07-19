@@ -3059,7 +3059,9 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       gsplatId: 298979100,
       voxel: "embedded",
       spawn: { x: -0.22, y: 0.75, z: 0.05 },
-      rot: [0, 0, 180]
+      rot: [0, 0, 180],
+      faceTarget: { x: -0.1, z: -10 }
+      // spawn/respawn looking down the hallway
     },
     {
       name: "Myhal",
@@ -3079,6 +3081,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       // grid center
       rot: [0, 0, 180],
       noSoldiers: true,
+      faceTarget: { x: 2.64, z: 7.08 },
+      // spawn facing the door portal
       portals: [
         { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 4, label: "\u2192 Bahen Hallway" }
       ]
@@ -3090,6 +3094,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       voxelBin: [298987765, "classroom.voxel.bin"],
       spawn: { x: -1.54, y: 0.3, z: -6.26 },
       rot: [0, 0, 180],
+      faceTarget: { x: 0.8, z: 1.5 },
+      // spawn facing into the room (the tables)
       portals: [
         { x: -1.54, y: 0.3, z: -6.26, radius: 1.4, to: 4, spawnAt: { x: 9.46, y: 0.42, z: 7.25 }, label: "\u2192 Bahen Hallway" }
       ]
@@ -3101,6 +3107,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       voxelBin: [298988210, "bahen-hallway.voxel.bin"],
       spawn: { x: -1.26, y: 0.36, z: -2.72 },
       rot: [0, 0, 180],
+      faceTarget: { x: 9.46, z: 7.25 },
+      // spawn/respawn facing the classroom door
       portals: [
         { x: 9.46, y: 0.42, z: 7.25, radius: 1.4, to: 3, label: "\u2192 Classroom" }
       ]
@@ -3322,6 +3330,12 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           z: col.gridMinZ + col.numVoxelsZ * col.voxelResolution * 0.5
         };
         this.walkCamera.position.set(sp.x, sp.y, sp.z);
+        if (scene.faceTarget) {
+          const fdx = scene.faceTarget.x - sp.x;
+          const fdz = scene.faceTarget.z - sp.z;
+          const yaw = Math.atan2(-fdx, -fdz) * 180 / Math.PI;
+          this.walkCamera.angles.set(0, yaw, 0);
+        }
         this.controller.onEnter(this.walkCamera);
         s._flyMode = false;
         const d2 = s._director;
