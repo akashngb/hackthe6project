@@ -96,6 +96,8 @@ class BallPhysics {
     collision: any;
     balls: any[] = [];
     obstacles: any[] = [];
+    /** target practice: balls die on first surface impact instead of bouncing */
+    noBounce = false;
     _push = { x: 0, y: 0, z: 0 };
 
     constructor(app: any, collision: any) {
@@ -189,6 +191,12 @@ class BallPhysics {
                         const nx = push.x / len, ny = push.y / len, nz = push.z / len;
                         const vn = b.v.x * nx + b.v.y * ny + b.v.z * nz;
                         if (vn < 0) {
+                            if (this.noBounce && vn < -BALL_BOUNCE_MIN_SPEED * 0.5) {
+                                // practice mode: dead on impact
+                                b.bounces = BALL_MAX_BOUNCES + 1;
+                                b.v.x = 0; b.v.y = 0; b.v.z = 0;
+                                break;
+                            }
                             if (vn < -BALL_BOUNCE_MIN_SPEED) b.bounces++;
                             b.v.x -= (1 + BALL_RESTITUTION) * vn * nx;
                             b.v.y -= (1 + BALL_RESTITUTION) * vn * ny;
@@ -422,8 +430,10 @@ class NpcSystem {
         if (clearances.length >= 5) {
             clearances.sort((a, b) => a - b);
             const median = clearances[Math.floor(clearances.length / 2)];
-            // people are roughly 2/3 of corridor height
-            this.npcHeight = Math.max(0.5, Math.min(2.2, median * 0.55));
+            // scans are metric (player capsule is fixed 1.5m and walking feels
+            // right), so soldiers get a fixed real-world height; the measured
+            // clearance only caps it for unusually low or off-scale scans
+            this.npcHeight = Math.min(1.65, median * 0.85);
             this.npcRadius = this.npcHeight * 0.18;
             console.log('npcSystem: corridor clearance', median.toFixed(2), '→ soldier height', this.npcHeight.toFixed(2));
         }
@@ -1372,7 +1382,21 @@ class ViewmodelSystem {
                     }
                 }
             }
-            this.balls.throwBall({ x: ox, y: oy, z: oz }, { x: f.x, y: f.y, z: f.z }, VM_BALL_SPEED, VM_BALL_RADIUS);
+            // converge on the crosshair: aim the ball from the muzzle at the
+            // exact point the camera ray hits (or a far point if nothing hit)
+            let tx = cp.x + f.x * VM_RANGE, ty = cp.y + f.y * VM_RANGE, tz = cp.z + f.z * VM_RANGE;
+            const aimHit = this.collision.queryRay(cp.x, cp.y, cp.z, f.x, f.y, f.z, VM_RANGE);
+            if (aimHit) {
+                const ax = aimHit.x - cp.x, ay = aimHit.y - cp.y, az = aimHit.z - cp.z;
+                if (ax * ax + ay * ay + az * az > 1) { // ignore point-blank hits
+                    tx = aimHit.x; ty = aimHit.y; tz = aimHit.z;
+                }
+            }
+            let dx = tx - ox, dy = ty - oy, dz = tz - oz;
+            const dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dl > 1e-6) { dx /= dl; dy /= dl; dz /= dl; }
+            else { dx = f.x; dy = f.y; dz = f.z; }
+            this.balls.throwBall({ x: ox, y: oy, z: oz }, { x: dx, y: dy, z: dz }, VM_BALL_SPEED, VM_BALL_RADIUS);
         }
 
         this._updateAmmo();
@@ -1674,6 +1698,250 @@ class LabelSystem {
     }
 }
 
+// ---- target practice: archery targets along the hallway ----
+
+const TARGET_ASSET: [number, string] = [298986925, 'target-archery.glb'];
+const TARGET_COUNT = 6;
+/** target height range as fractions of corridor clearance (small → medium) */
+const TARGET_HEIGHT_MIN = 0.3;   // metres
+const TARGET_HEIGHT_MAX = 0.6;   // metres
+/** chance a target sits on the floor instead of floating */
+const TARGET_FLOOR_CHANCE = 0.35;
+/** every target faces this yaw (all identical, tweak via walk.targets.setYaw) */
+const TARGET_YAW = 0;
+
+class TargetSystem {
+    app: any;
+    collision: any;
+    sounds: any;
+    onHit: any = null;
+    active = false;
+    ready = false;
+    yaw = TARGET_YAW;
+    targets: any[] = [];
+    _asset: any = null;
+    _stats: any = null;
+
+    constructor(app: any, collision: any, sounds: any) {
+        this.app = app;
+        this.collision = collision;
+        this.sounds = sounds;
+        this._load();
+    }
+
+    _url(id: number, fname: string) {
+        let q = '';
+        try {
+            const cfg = (window as any).config;
+            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
+            q = `?branchId=${bid}`;
+        } catch (e) { /* default */ }
+        return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+    }
+
+    _load() {
+        const [id, fname] = TARGET_ASSET;
+        const asset = new pc.Asset(fname, 'container', { url: this._url(id, fname), filename: fname });
+        asset.on('load', () => {
+            this._asset = asset;
+            this.ready = true;
+            if (this.active) this._spawnAll();
+        });
+        asset.on('error', (err: string) => console.error('target asset failed:', err));
+        this.app.assets.add(asset);
+        this.app.assets.load(asset);
+    }
+
+    _corridorStats() {
+        if (this._stats) return this._stats;
+        const col = this.collision;
+        const res = col.voxelResolution;
+        const midY = col.gridMinY + col.numVoxelsY * res * 0.5;
+        const gMaxX = col.gridMinX + col.numVoxelsX * res;
+        const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
+        const cs: number[] = [];
+        const floors: number[] = [];
+        for (let i = 0; i < 80 && cs.length < 30; i++) {
+            const x = col.gridMinX + 0.5 + Math.random() * (gMaxX - col.gridMinX - 1);
+            const z = col.gridMinZ + 1 + Math.random() * (gMaxZ - col.gridMinZ - 2);
+            const down = col.queryRay(x, midY, z, 0, -1, 0, 30);
+            const up = col.queryRay(x, midY, z, 0, 1, 0, 30);
+            if (down && up) { cs.push(up.y - down.y); floors.push(down.y); }
+        }
+        cs.sort((a, b) => a - b);
+        floors.sort((a, b) => a - b);
+        this._stats = cs.length >= 5 ?
+            { clearance: cs[Math.floor(cs.length / 2)], floor: floors[Math.floor(floors.length / 2)] } :
+            { clearance: 2.4, floor: col.gridMinY };
+        return this._stats;
+    }
+
+    _validSpot(x: number, z: number, height: number) {
+        const col = this.collision;
+        const res = col.voxelResolution;
+        const midY = col.gridMinY + col.numVoxelsY * res * 0.5;
+        const stats = this._corridorStats();
+        const down = col.queryRay(x, midY, z, 0, -1, 0, 30);
+        if (!down) return null;
+        if (Math.abs(down.y - stats.floor) > 0.4) return null;
+        const up = col.queryRay(x, down.y + 0.2, z, 0, 1, 0, 30);
+        const ceil = up ? up.y : down.y + stats.clearance;
+        if (ceil - down.y < height + 0.15) return null;
+        if (!col.isFreeAt(x, down.y + 0.5, z)) return null;
+        return { x, y: down.y, z, ceil };
+    }
+
+    _randomSpot(height: number, avoid: any[]) {
+        const col = this.collision;
+        const res = col.voxelResolution;
+        const gMaxX = col.gridMinX + col.numVoxelsX * res;
+        const gMaxZ = col.gridMinZ + col.numVoxelsZ * res;
+        for (let i = 0; i < 120; i++) {
+            const x = col.gridMinX + 0.4 + Math.random() * (gMaxX - col.gridMinX - 0.8);
+            const z = col.gridMinZ + 1.5 + Math.random() * (gMaxZ - col.gridMinZ - 3);
+            const s = this._validSpot(x, z, height);
+            if (!s) continue;
+            // keep targets spread out
+            let tooClose = false;
+            for (const t of avoid) {
+                const dx = t.p.x - s.x, dz = t.p.z - s.z;
+                if (dx * dx + dz * dz < 2.25) { tooClose = true; break; }
+            }
+            if (!tooClose) return s;
+        }
+        return null;
+    }
+
+    enter() {
+        this.active = true;
+        if (this.ready) this._spawnAll();
+    }
+
+    exit() {
+        this.active = false;
+        for (const t of this.targets) {
+            try { t.root.destroy(); } catch (e) { /* gone */ }
+        }
+        this.targets.length = 0;
+    }
+
+    _spawnAll() {
+        while (this.targets.length < TARGET_COUNT) {
+            if (!this._spawnOne()) break;
+        }
+        console.log('targetSystem:', this.targets.length, 'targets up');
+    }
+
+    _spawnOne() {
+        const stats = this._corridorStats();
+        // varied sizes: absolute metric range, capped by the corridor
+        const height = Math.min(
+            stats.clearance * 0.45,
+            TARGET_HEIGHT_MIN + Math.random() * (TARGET_HEIGHT_MAX - TARGET_HEIGHT_MIN)
+        );
+        const spot = this._randomSpot(height, this.targets);
+        if (!spot || !this._asset) return false;
+
+        // varied elevation: some on the floor, the rest floating at random
+        // heights — but always fully inside the room
+        const headroom = (spot.ceil ?? (spot.y + stats.clearance)) - spot.y - height - 0.25;
+        const hover = (Math.random() < TARGET_FLOOR_CHANCE || headroom <= 0)
+            ? 0
+            : Math.random() * Math.max(0, headroom);
+        const baseY = spot.y + hover;
+
+        const root = new pc.Entity('target');
+        const model = this._asset.resource.instantiateRenderEntity();
+        root.addChild(model);
+        this.app.root.addChild(root);
+        root.setPosition(spot.x, baseY, spot.z);
+        // identical orientation for every target
+        root.setEulerAngles(0, this.yaw, 0);
+
+        this.targets.push({
+            root, model,
+            p: { x: spot.x, y: baseY, z: spot.z },
+            height,
+            hitR: height * 0.55,
+            fit: { phase: 'scale', wait: 3 }
+        });
+        return true;
+    }
+
+    setYaw(deg: number) {
+        this.yaw = deg;
+        for (const t of this.targets) t.root.setEulerAngles(0, deg, 0);
+    }
+
+    _measure(model: any) {
+        let min: any = null, max: any = null;
+        for (const r of model.findComponents('render')) {
+            for (const mi of r.meshInstances) {
+                const mn = mi.aabb.getMin(), mx = mi.aabb.getMax();
+                if (!min) {
+                    min = { x: mn.x, y: mn.y, z: mn.z };
+                    max = { x: mx.x, y: mx.y, z: mx.z };
+                } else {
+                    min.x = Math.min(min.x, mn.x); min.y = Math.min(min.y, mn.y); min.z = Math.min(min.z, mn.z);
+                    max.x = Math.max(max.x, mx.x); max.y = Math.max(max.y, mx.y); max.z = Math.max(max.z, mx.z);
+                }
+            }
+        }
+        if (!min) return null;
+        return {
+            minY: min.y,
+            center: { x: (min.x + max.x) * 0.5, y: (min.y + max.y) * 0.5, z: (min.z + max.z) * 0.5 },
+            ext: { x: max.x - min.x, y: max.y - min.y, z: max.z - min.z }
+        };
+    }
+
+    step(dt: number, balls: any[]) {
+        if (!this.active) return;
+
+        for (const t of this.targets) {
+            if (!t.fit) continue;
+            const fit = t.fit;
+            if (fit.wait > 0) { fit.wait--; continue; }
+            const m = this._measure(t.model);
+            if (!m || !isFinite(m.ext.y) || m.ext.y <= 0.005) { fit.wait = 3; continue; }
+            if (fit.phase === 'scale') {
+                const cur = t.model.getLocalScale().x;
+                const s = cur * (t.height / m.ext.y);
+                t.model.setLocalScale(s, s, s);
+                fit.phase = 'ground';
+                fit.wait = 2;
+            } else if (fit.phase === 'ground') {
+                const ws = new pc.Vec3(t.p.x - m.center.x, t.p.y - m.minY, t.p.z - m.center.z);
+                const inv = t.root.getRotation().clone().invert();
+                const ls = inv.transformVector(ws, new pc.Vec3());
+                const lp = t.model.getLocalPosition();
+                t.model.setLocalPosition(lp.x + ls.x, lp.y + ls.y, lp.z + ls.z);
+                t.fit = null;
+            }
+        }
+
+        // ball hits: center of the target board is at ~2/3 height
+        for (let i = this.targets.length - 1; i >= 0; i--) {
+            const t = this.targets[i];
+            if (t.fit) continue;
+            const cy = t.p.y + t.height * 0.6;
+            for (const b of balls) {
+                const sp = b.v.x * b.v.x + b.v.y * b.v.y + b.v.z * b.v.z;
+                if (sp < 4) continue;
+                const dx = b.p.x - t.p.x, dy = b.p.y - cy, dz = b.p.z - t.p.z;
+                if (dx * dx + dy * dy + dz * dz < (t.hitR + b.r) * (t.hitR + b.r)) {
+                    if (this.sounds) this.sounds.play('shoot-end.wav', { volume: 0.7, pitch: 1.1 + Math.random() * 0.2 });
+                    if (this.onHit) this.onHit(t);
+                    try { t.root.destroy(); } catch (e) { /* gone */ }
+                    this.targets.splice(i, 1);
+                    this._spawnOne(); // pop up somewhere else
+                    break;
+                }
+            }
+        }
+    }
+}
+
 // ---- voxel debug view: visualize the collision grid around the player ----
 
 const VOXVIEW_RADIUS = 9;       // metres around the camera
@@ -1831,6 +2099,288 @@ class VoxelDebugView {
     }
 }
 
+// ---- scene manager: switch between scanned locations (splat + collision) ----
+
+const SCENES: any[] = [
+    {
+        name: 'Bahen 5F',
+        gsplatId: 298979100,
+        voxel: 'embedded',
+        spawn: { x: -0.22, y: 0.75, z: 0.05 },
+        rot: [0, 0, 180]
+    },
+    {
+        name: 'Myhal',
+        gsplatId: 298987089,
+        voxelJson: [298987090, 'myhal.voxel.json'],
+        voxelBin: [298987091, 'myhal.voxel.bin'],
+        spawn: null, // grid center
+        rot: [0, 0, 180]
+    },
+    {
+        name: 'Bahen Front',
+        gsplatId: 298987672,
+        voxelJson: [298987673, 'bahen-front.voxel.json'],
+        voxelBin: [298987674, 'bahen-front.voxel.bin'],
+        spawn: null, // grid center
+        rot: [0, 0, 180],
+        noSoldiers: true,
+        portals: [
+            { x: 2.64, y: 1.65, z: 7.08, radius: 1.4, to: 0, label: '→ Bahen 5F' }
+        ]
+    },
+    {
+        name: 'Bahen Classroom',
+        gsplatId: 298987763,
+        voxelJson: [298987764, 'classroom.voxel.json'],
+        voxelBin: [298987765, 'classroom.voxel.bin'],
+        spawn: null, // grid center
+        rot: [0, 0, 180]
+    }
+];
+
+class SceneManager {
+    app: any;
+    collision: any;
+    controller: any;
+    walkCamera: any;
+    script: any;
+    current = 0;
+    _busy = false;
+    _select: any = null;
+    _portals: any[] = [];
+    _screenPos: any = null;
+
+    constructor(app: any, collision: any, controller: any, walkCamera: any, script: any) {
+        this.app = app;
+        this.collision = collision;
+        this.controller = controller;
+        this.walkCamera = walkCamera;
+        this.script = script;
+        this._makeDropdown();
+    }
+
+    _makeDropdown() {
+        const sel = document.createElement('select');
+        sel.id = 'scene-select';
+        sel.style.cssText = 'position:fixed;top:14px;right:14px;z-index:10006;background:rgba(13,17,23,0.85);color:#fff;font:bold 13px monospace;border:1px solid #e63946;border-radius:5px;padding:6px 10px;cursor:pointer;outline:none;';
+        SCENES.forEach((s, i) => {
+            const o = document.createElement('option');
+            o.value = String(i);
+            o.textContent = '📍 ' + s.name;
+            sel.appendChild(o);
+        });
+        sel.addEventListener('change', () => {
+            const i = parseInt(sel.value, 10);
+            sel.blur();
+            this.switchTo(i);
+        });
+        document.body.appendChild(sel);
+        this._select = sel;
+    }
+
+    _assetUrl(id: number, fname: string) {
+        let q = '';
+        try {
+            const cfg = (window as any).config;
+            const bid = (cfg && (cfg.self?.branch?.id || cfg.self?.branchId)) || '87d9f884-5657-4343-887e-e823e912488f';
+            q = `?branchId=${bid}`;
+        } catch (e) { /* default */ }
+        return `${window.location.origin}/api/assets/${id}/file/${fname}${q}`;
+    }
+
+    async _loadVoxel(scene: any) {
+        if (scene.voxel === 'embedded') {
+            const data = (window as any).UNI3_VOXEL;
+            const bin = atob(data.binBase64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const view = new Uint32Array(bytes.buffer);
+            const meta = data.meta;
+            return {
+                meta,
+                nodes: view.slice(0, meta.nodeCount),
+                leafData: view.slice(meta.nodeCount, meta.nodeCount + meta.leafDataCount)
+            };
+        }
+        const metaResp = await fetch(this._assetUrl(scene.voxelJson[0], scene.voxelJson[1]));
+        const meta = await metaResp.json();
+        const binResp = await fetch(this._assetUrl(scene.voxelBin[0], scene.voxelBin[1]));
+        const buffer = await binResp.arrayBuffer();
+        const view = new Uint32Array(buffer);
+        return {
+            meta,
+            nodes: view.slice(0, meta.nodeCount),
+            leafData: view.slice(meta.nodeCount, meta.nodeCount + meta.leafDataCount)
+        };
+    }
+
+    _applyCollision(meta: any, nodes: any, leafData: any) {
+        const c: any = this.collision;
+        const res = meta.voxelResolution;
+        c._gridMinX = meta.gridBounds.min[0];
+        c._gridMinY = meta.gridBounds.min[1];
+        c._gridMinZ = meta.gridBounds.min[2];
+        c._numVoxelsX = Math.round((meta.gridBounds.max[0] - meta.gridBounds.min[0]) / res);
+        c._numVoxelsY = Math.round((meta.gridBounds.max[1] - meta.gridBounds.min[1]) / res);
+        c._numVoxelsZ = Math.round((meta.gridBounds.max[2] - meta.gridBounds.min[2]) / res);
+        c._voxelResolution = res;
+        c._leafSize = meta.leafSize;
+        c._treeDepth = meta.treeDepth;
+        c._nodes = nodes;
+        c._leafData = leafData;
+    }
+
+    _clearPortals() {
+        for (const pt of this._portals) {
+            if (pt.ent) { try { pt.ent.destroy(); } catch (e) { /* gone */ } }
+            if (pt.el) pt.el.remove();
+        }
+        this._portals.length = 0;
+    }
+
+    _buildPortals(scene: any) {
+        this._clearPortals();
+        if (!scene.portals) return;
+        for (const cfg of scene.portals) {
+            let ent: any = null;
+            try {
+                ent = new pc.Entity('portal');
+                ent.addComponent('render', { type: 'sphere' });
+                const mat = new pc.StandardMaterial();
+                mat.diffuse.set(0.1, 0.4, 1);
+                mat.emissive.set(0.2, 0.5, 1);
+                mat.blendType = pc.BLEND_NORMAL;
+                mat.opacity = 0.35;
+                mat.depthWrite = false;
+                mat.update();
+                ent.render.meshInstances[0].material = mat;
+                ent.setLocalScale(cfg.radius * 1.4, cfg.radius * 1.4, cfg.radius * 1.4);
+                ent.setPosition(cfg.x, cfg.y, cfg.z);
+                this.app.root.addChild(ent);
+            } catch (e) { ent = null; }
+
+            const el = document.createElement('div');
+            el.style.cssText = 'position:fixed;transform:translate(-50%,-120%);z-index:9998;color:#fff;background:rgba(20,80,220,0.85);font:bold 12px monospace;padding:3px 10px;border-radius:10px;pointer-events:none;white-space:nowrap;';
+            el.textContent = cfg.label || 'portal';
+            document.body.appendChild(el);
+
+            this._portals.push({ cfg, ent, el });
+        }
+        if (!this._screenPos) this._screenPos = new pc.Vec3();
+    }
+
+    /** per-frame: project portal labels, trigger teleport on contact */
+    update() {
+        if (!this._portals.length || this._busy) return;
+        const camEnt = this.script.entity;
+        const camComp = camEnt.camera;
+        const canvas = this.app.graphicsDevice.canvas;
+        const p = this.walkCamera.position;
+
+        for (const pt of this._portals) {
+            const c = pt.cfg;
+            if (pt.el && camComp && canvas) {
+                camComp.worldToScreen(new pc.Vec3(c.x, c.y + 0.6, c.z), this._screenPos);
+                if (this._screenPos.z < 0) {
+                    pt.el.style.display = 'none';
+                } else {
+                    pt.el.style.display = 'block';
+                    pt.el.style.left = `${this._screenPos.x * (canvas.clientWidth / canvas.width)}px`;
+                    pt.el.style.top = `${this._screenPos.y * (canvas.clientHeight / canvas.height)}px`;
+                }
+            }
+            const dx = p.x - c.x, dy = p.y - c.y, dz = p.z - c.z;
+            if (dx * dx + dy * dy + dz * dz < c.radius * c.radius) {
+                this.switchTo(c.to);
+                return;
+            }
+        }
+    }
+
+    async switchTo(i: number) {
+        if (this._busy || i === this.current) return;
+        this._busy = true;
+        const scene = SCENES[i];
+        const s: any = this.script;
+        try {
+            if (s._director) s._director._showBanner(`TELEPORTING → ${scene.name.toUpperCase()}…`, 3);
+
+            // 1) collision data
+            const v = await this._loadVoxel(scene);
+            this._applyCollision(v.meta, v.nodes, v.leafData);
+
+            // 2) splat swap
+            const splat = this.app.root.findByName('University 3');
+            if (splat) {
+                splat.setEulerAngles(scene.rot[0], scene.rot[1], scene.rot[2]);
+                const asset = this.app.assets.get(scene.gsplatId);
+                if (asset) {
+                    if (!asset.resource && !asset.loading) this.app.assets.load(asset);
+                    splat.gsplat.asset = asset;
+                }
+            }
+
+            // 3) clear scene-bound state
+            if (s._balls) s._balls.clear();
+            if (s._labels) {
+                while (s._labels.markers.length) s._labels.deleteMarker(s._labels.markers[0]);
+            }
+            if (s._voxelView) {
+                s._voxelView._lastPos = { x: 1e9, y: 1e9, z: 1e9 };
+                if (s._voxelView.entity) { s._voxelView.entity.destroy(); s._voxelView.entity = null; }
+            }
+            if (s._npcs) {
+                s._npcs.reset();
+                s._npcs._measureHallway();
+            }
+            if (s._targets) {
+                const wasActive = s._targets.active;
+                if (wasActive) s._targets.exit();
+                s._targets._stats = null;
+                if (wasActive) s._targets.enter();
+            }
+
+            // 4) respawn the player
+            const col = this.collision;
+            const sp = scene.spawn || {
+                x: col.gridMinX + col.numVoxelsX * col.voxelResolution * 0.5,
+                y: col.gridMinY + col.numVoxelsY * col.voxelResolution * 0.5,
+                z: col.gridMinZ + col.numVoxelsZ * col.voxelResolution * 0.5
+            };
+            this.walkCamera.position.set(sp.x, sp.y, sp.z);
+            this.controller.onEnter(this.walkCamera);
+            s._flyMode = false;
+
+            // 5) game mode continuity (no-soldier zones stay quiet)
+            const d = s._director;
+            if (s._npcs) s._npcs.combatEnabled = !scene.noSoldiers && !!(d && (d.state === 'playing' || d.state === 'intermission'));
+            if (d && (d.state === 'playing' || d.state === 'intermission')) {
+                if (scene.noSoldiers) {
+                    d.state = 'playing';
+                    if (s._npcs) s._npcs.setPopulation(0);
+                } else {
+                    d.wave = 0;
+                    d.state = 'playing';
+                    d._nextWave();
+                }
+            }
+
+            // 6) portals for this scene
+            this._buildPortals(scene);
+
+            if (this._select) this._select.value = String(i);
+            this.current = i;
+            console.log('sceneManager: switched to', scene.name);
+        } catch (e) {
+            console.error('sceneManager switch failed', e);
+        }
+        this._busy = false;
+        const canvas = this.app.graphicsDevice.canvas;
+        if (canvas) canvas.requestPointerLock();
+    }
+}
+
 // ---- CAMPUS SIEGE: game director (waves, score, player HP, UofT skin) ----
 
 const THEME_BG = '#0d1117';
@@ -1840,7 +2390,9 @@ const HP_REGEN_DELAY = 5;
 const HP_REGEN_RATE = 6;
 
 class GameDirector {
-    state = 'title'; // title | playing | intermission | gameover
+    state = 'title'; // title | playing | intermission | gameover | practice
+    targets: any = null;
+    practiceHits = 0;
     wave = 0;
     score = 0;
     kills = 0;
@@ -1848,6 +2400,7 @@ class GameDirector {
     _regenT = 0;
     _interT = 0;
     npcs: any;
+    sceneMgr: any = null;
     sounds: any = null;
     onRestart: any = null;
     _ambient: any = null;
@@ -1892,6 +2445,39 @@ class GameDirector {
         this._syncHud();
     }
 
+    enterPractice() {
+        if (this.targets == null) return;
+        // leave any siege state cleanly
+        this.npcs.reset();
+        this.npcs.combatEnabled = false;
+        this.npcs.playerDead = false;
+        this.state = 'practice';
+        this.practiceHits = 0;
+        this._overlay.style.display = 'none';
+        this.targets.enter();
+        const w = (window as any).walk;
+        if (w && w.balls) { w.balls.noBounce = true; w.balls.clear(); }
+        this._showBanner('TARGET PRACTICE — T to return', 4);
+        this._syncHud();
+        const canvas = (window as any).walk?.script?.app?.graphicsDevice?.canvas;
+        if (canvas && document.pointerLockElement !== canvas) canvas.requestPointerLock();
+    }
+
+    exitPractice() {
+        if (this.state !== 'practice') return;
+        this.targets.exit();
+        const w = (window as any).walk;
+        if (w && w.balls) { w.balls.noBounce = false; w.balls.clear(); }
+        this._showTitle();
+    }
+
+    practiceHit() {
+        this.practiceHits++;
+        this.score = this.practiceHits * 50;
+        this._feedMsg('target hit  +50');
+        this._syncHud();
+    }
+
     _showTitle() {
         this.state = 'title';
         this._overlay.style.display = 'flex';
@@ -1900,6 +2486,7 @@ class GameDirector {
             '<div style="font-size:13px;letter-spacing:4px;opacity:0.7;margin-bottom:30px">HOLD THE HALLWAY</div>' +
             '<div style="font:13px monospace;line-height:1.9;opacity:0.9">WASD move · mouse look · LMB fire ball cannon · R reload<br>Space jump · Shift run · F respawn · Y fly · X label · V remove</div>' +
             '<div style="margin-top:32px;font:bold 16px monospace;animation:pulse 1.2s infinite">CLICK TO START</div>' +
+            '<div style="margin-top:14px;font:13px monospace;opacity:0.7">press T for target practice</div>' +
             '<style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}</style>';
     }
 
@@ -1927,10 +2514,21 @@ class GameDirector {
     }
 
     _nextWave() {
+        // no-soldier zones (e.g. Bahen Front) never spawn waves
+        const sc = this.sceneMgr ? SCENES[this.sceneMgr.current] : null;
+        if (sc && sc.noSoldiers) {
+            this.npcs.reset();
+            this.npcs.setPopulation(0);
+            this.npcs.combatEnabled = false;
+            this._showBanner('SAFE ZONE — no hostiles here', 3);
+            this._syncHud();
+            return;
+        }
         this.wave++;
         const count = Math.min(2 + this.wave, 8);
         const speedMul = Math.min(1 + (this.wave - 1) * 0.12, 1.8);
         this.npcs.reset();
+        this.npcs.combatEnabled = true;
         this.npcs.setPopulation(count, speedMul);
         this._showBanner(`— WAVE ${this.wave} INCOMING —`, 3);
         this._syncHud();
@@ -1980,8 +2578,13 @@ class GameDirector {
     }
 
     _syncHud() {
-        this._hud.innerHTML =
-            `SIEGE<br><span style="font-weight:normal">wave ${this.wave} · score ${this.score} · kills ${this.kills}</span>`;
+        if (this.state === 'practice') {
+            this._hud.innerHTML =
+                `TARGET PRACTICE<br><span style="font-weight:normal">hits ${this.practiceHits} · score ${this.practiceHits * 50}</span>`;
+        } else {
+            this._hud.innerHTML =
+                `SIEGE<br><span style="font-weight:normal">wave ${this.wave} · score ${this.score} · kills ${this.kills}</span>`;
+        }
         this._hpFill.style.width = `${(this.hp / PLAYER_MAX_HP) * 100}%`;
     }
 
@@ -1993,7 +2596,9 @@ class GameDirector {
                 this.hp = Math.min(PLAYER_MAX_HP, this.hp + HP_REGEN_RATE * dt);
                 this._syncHud();
             }
-            if (this.npcs.ready && this.npcs.npcs.length > 0 && this.npcs.aliveCount() === 0) {
+            const scNow = this.sceneMgr ? SCENES[this.sceneMgr.current] : null;
+            if (!(scNow && scNow.noSoldiers) &&
+                this.npcs.ready && this.npcs.npcs.length > 0 && this.npcs.aliveCount() === 0) {
                 this.state = 'intermission';
                 this._interT = WAVE_INTERMISSION;
                 this._showBanner(`WAVE ${this.wave} CLEARED`, WAVE_INTERMISSION);
@@ -2026,6 +2631,16 @@ WalkScript.prototype.initialize = function (this: any) {
     this._hud.style.display = 'none';
     this._hudHidden = true;
 
+    // always-visible coordinate readout
+    this._coordBox = document.getElementById('coord-box');
+    if (!this._coordBox) {
+        this._coordBox = document.createElement('div');
+        this._coordBox.id = 'coord-box';
+        this._coordBox.style.cssText = 'position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:10001;color:#fff;background:rgba(13,17,23,0.6);font:12px monospace;padding:4px 12px;border-radius:5px;letter-spacing:1px;pointer-events:none;';
+        document.body.appendChild(this._coordBox);
+    }
+    this._coordT = 0;
+
     const data = (window as any).UNI3_VOXEL;
     if (!data) {
         this._hud.textContent = 'walkCollision: NO VOXEL DATA (voxel-data.js missing)';
@@ -2051,11 +2666,9 @@ WalkScript.prototype.initialize = function (this: any) {
     this._controller = controller;
 
     const walkCamera = new WalkCamera();
-    walkCamera.position.set(
-        collision.gridMinX + collision.numVoxelsX * collision.voxelResolution * 0.5,
-        collision.gridMinY + collision.numVoxelsY * collision.voxelResolution * 0.5,
-        collision.gridMinZ + collision.numVoxelsZ * collision.voxelResolution * 0.5
-    );
+    // Bahen 5F spawn (scene 0); other scenes set theirs on switch
+    const spawn0 = SCENES[0].spawn;
+    walkCamera.position.set(spawn0.x, spawn0.y, spawn0.z);
     controller.onEnter(walkCamera);
     this._walkCamera = walkCamera;
 
@@ -2141,6 +2754,12 @@ WalkScript.prototype.initialize = function (this: any) {
                 if (down) {
                     const m = self._labels.nearestMarkerToAim();
                     if (m) self._labels.deleteMarker(m);
+                }
+                break;
+            case 'KeyT':
+                if (down && self._director) {
+                    if (self._director.state === 'practice') self._director.exitPractice();
+                    else self._director.enterPractice();
                 }
                 break;
             case 'KeyB':
@@ -2275,8 +2894,25 @@ WalkScript.prototype.initialize = function (this: any) {
     if (this._npcs) this._npcs.sounds = this._sounds;
     if (this._viewmodel) this._viewmodel.sounds = this._sounds;
     try {
+        this._targets = new TargetSystem(this.app, collision, this._sounds);
+    } catch (e) {
+        console.error('target system init failed', e);
+        this._targets = null;
+    }
+    try {
+        this._scenes = new SceneManager(this.app, collision, controller, walkCamera, this);
+    } catch (e) {
+        console.error('scene manager init failed', e);
+        this._scenes = null;
+    }
+    try {
         this._director = this._npcs ? new GameDirector(this._npcs) : null;
         if (this._director) this._director.sounds = this._sounds;
+        if (this._director && this._targets) {
+            this._director.targets = this._targets;
+            this._targets.onHit = () => this._director.practiceHit();
+        }
+        if (this._director && this._scenes) this._director.sceneMgr = this._scenes;
         if (this._director) {
             this._director.onRestart = () => {
                 if (this._balls) this._balls.clear();
@@ -2295,7 +2931,7 @@ WalkScript.prototype.initialize = function (this: any) {
         this._director = null;
     }
 
-    (window as any).walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel, director: this._director };
+    (window as any).walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel, director: this._director, targets: this._targets, scenes: this._scenes };
     this._hudT = 0;
 };
 
@@ -2308,10 +2944,19 @@ WalkScript.prototype.update = function (this: any, dt: number) {
             this._balls.obstacles = this._props.obstacles;
         }
     }
+    this._coordT = (this._coordT || 0) + dt;
+    if (this._coordT > 0.1 && this._coordBox && typeof this.entity.getPosition === 'function') {
+        this._coordT = 0;
+        const cp = this.entity.getPosition();
+        this._coordBox.textContent = `x ${cp.x.toFixed(2)}  y ${cp.y.toFixed(2)}  z ${cp.z.toFixed(2)}`;
+    }
+
     if (this._balls) this._balls.step(Math.min(dt, 0.05));
     if (this._npcs) this._npcs.step(Math.min(dt, 0.05), this._balls ? this._balls.balls : []);
     if (this._viewmodel) this._viewmodel.step(dt);
     if (this._director) this._director.update(dt);
+    if (this._targets) this._targets.step(dt, this._balls ? this._balls.balls : []);
+    if (this._scenes) this._scenes.update();
     if (this._voxelView) this._voxelView.update(this.entity);
     if (this._labels) this._labels.update();
 
