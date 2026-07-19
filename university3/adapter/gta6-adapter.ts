@@ -678,8 +678,10 @@ class NpcSystem {
             npc.el.textContent = '☠';
             npc.el.style.background = 'rgba(120,20,20,0.8)';
         } else {
-            npc.el.textContent = '♥'.repeat(Math.max(0, npc.hp));
-            npc.el.style.background = 'rgba(30,30,30,0.75)';
+            const pct = Math.max(0, Math.min(1, npc.hp / 3)) * 100;
+            npc.el.textContent = '';
+            npc.el.style.background = 'rgba(9,9,11,0.9)';
+            npc.el.innerHTML = `<div style="width:34px;height:3px;border-radius:9999px;background:rgba(255,255,255,0.15);overflow:hidden"><div style="width:${pct}%;height:100%;border-radius:9999px;background:var(--destructive)"></div></div>`;
         }
     }
 
@@ -2246,6 +2248,7 @@ const SCENES: any[] = [
         voxel: 'embedded',
         spawn: { x: -0.22, y: 0.75, z: 0.05 },
         rot: [0, 0, 180],
+        noNpcs: true, // soldiers only — no wandering friends
         faceTarget: { x: -0.1, z: -10 } // spawn/respawn looking down the hallway
     },
     {
@@ -2276,6 +2279,7 @@ const SCENES: any[] = [
         voxelBin: [298987765, 'classroom.voxel.bin'],
         spawn: { x: -1.54, y: 0.3, z: -6.26 },
         rot: [0, 0, 180],
+        noNpcs: true, // soldiers only — no wandering friends
         faceTarget: { x: 0.8, z: 1.5 }, // spawn facing into the room (the tables)
         portals: [
             { x: -1.54, y: 0.3, z: -6.26, radius: 1.4, to: 4, spawnAt: { x: 9.46, y: 0.42, z: 7.25 }, label: '→ Bahen Hallway' }
@@ -3312,14 +3316,8 @@ class FriendSystem {
             }
             root.setPosition(spot.x, spot.y, spot.z);
 
-            const el = document.createElement('div');
-            el.className = 'sg sg-mono';
-            el.style.cssText = 'position:fixed;transform:translate(-50%,-100%);z-index:9997;font-family:var(--font);font-size:11px;font-weight:600;padding:2px 10px;border-radius:9999px;background:rgba(9,9,11,0.9);pointer-events:none;white-space:nowrap;color:var(--ok);border:1px solid rgba(52,211,153,0.4);';
-            el.textContent = cfg.name;
-            document.body.appendChild(el);
-
             this.friends.push({
-                cfg, root, model, el,
+                cfg, root, model, el: null,
                 p: { x: spot.x, y: spot.y, z: spot.z },
                 target: null,
                 static: !!cfg.generated, // T-pose units stand at attention
