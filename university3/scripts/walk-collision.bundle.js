@@ -3176,6 +3176,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       __publicField(this, "_thumbs", {});
       __publicField(this, "_sidebar", null);
       __publicField(this, "_cardsWrap", null);
+      /** doorway-blink: fade the world to black and back */
+      __publicField(this, "_fadeEl", null);
       this.app = app;
       this.collision = collision;
       this.controller = controller;
@@ -3360,11 +3362,27 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       const binResp = await fetch(this._assetUrl(scene.voxelBin[0], scene.voxelBin[1]));
       const buffer = await binResp.arrayBuffer();
       const view = new Uint32Array(buffer);
-      return {
+      scene.voxelData = {
         meta,
         nodes: view.slice(0, meta.nodeCount),
         leafData: view.slice(meta.nodeCount, meta.nodeCount + meta.leafDataCount)
       };
+      return scene.voxelData;
+    }
+    _fade(to, ms) {
+      try {
+        if (!this._fadeEl) {
+          const f2 = document.createElement("div");
+          f2.style.cssText = "position:fixed;inset:0;z-index:10003;background:#000;opacity:0;pointer-events:none;";
+          document.body.appendChild(f2);
+          this._fadeEl = f2;
+        }
+        const f = this._fadeEl;
+        f.style.transition = `opacity ${ms}ms ease`;
+        f.style.opacity = String(to);
+      } catch (e) {
+      }
+      return new Promise((r) => setTimeout(r, ms + 20));
     }
     _applyCollision(meta, nodes, leafData) {
       const c = this.collision;
@@ -3455,6 +3473,23 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
         }
       }
     }
+    /** warm the voxel grid + splat for every scene a portal here leads to */
+    _prefetchDestinations(scene) {
+      if (!scene.portals) return;
+      for (const cfg of scene.portals) {
+        const dest = SCENES[cfg.to];
+        if (!dest) continue;
+        if (!dest.voxelData && dest.voxel !== "embedded") {
+          this._loadVoxel(dest).catch(() => {
+          });
+        }
+        try {
+          const a = dest.gsplatAsset || this.app.assets.get(dest.gsplatId);
+          if (a && !a.resource && !a.loading) this.app.assets.load(a);
+        } catch (e) {
+        }
+      }
+    }
     async switchTo(i, spawnAt = null) {
       if (this._busy) {
         this._queued = { i, spawnAt };
@@ -3470,7 +3505,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           s._npcs.reset();
           s._npcs.floorRange = scene.npcFloorY || null;
         }
-        if (s._director) s._director._showBanner(`TELEPORTING \u2192 ${scene.name.toUpperCase()}\u2026`, 3);
+        await this._fade(1, 130);
         const v2 = await this._loadVoxel(scene);
         this._applyCollision(v2.meta, v2.nodes, v2.leafData);
         const splat = this.app.root.findByName("University 3");
@@ -3532,6 +3567,7 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
           }
         }
         this._buildPortals(scene);
+        this._prefetchDestinations(scene);
         this._setActive(i);
         this.current = i;
         setTimeout(() => this._maybeCapture(), 1800);
@@ -3539,6 +3575,8 @@ fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
       } catch (e) {
         console.error("sceneManager switch failed", e);
       }
+      await new Promise((r) => setTimeout(r, 140));
+      this._fade(0, 300);
       if (s._npcs) s._npcs.suspended = false;
       this._busy = false;
       if (s._net && s._net.enabled) s._net.sendStateNow();

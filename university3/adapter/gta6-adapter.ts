@@ -2509,11 +2509,29 @@ class SceneManager {
         const binResp = await fetch(this._assetUrl(scene.voxelBin[0], scene.voxelBin[1]));
         const buffer = await binResp.arrayBuffer();
         const view = new Uint32Array(buffer);
-        return {
+        scene.voxelData = {
             meta,
             nodes: view.slice(0, meta.nodeCount),
             leafData: view.slice(meta.nodeCount, meta.nodeCount + meta.leafDataCount)
         };
+        return scene.voxelData;
+    }
+
+    /** doorway-blink: fade the world to black and back */
+    _fadeEl: any = null;
+    _fade(to: number, ms: number) {
+        try {
+            if (!this._fadeEl) {
+                const f = document.createElement('div');
+                f.style.cssText = 'position:fixed;inset:0;z-index:10003;background:#000;opacity:0;pointer-events:none;';
+                document.body.appendChild(f);
+                this._fadeEl = f;
+            }
+            const f = this._fadeEl;
+            f.style.transition = `opacity ${ms}ms ease`;
+            f.style.opacity = String(to);
+        } catch (e) { /* headless */ }
+        return new Promise(r => setTimeout(r, ms + 20));
     }
 
     _applyCollision(meta: any, nodes: any, leafData: any) {
@@ -2607,6 +2625,22 @@ class SceneManager {
         }
     }
 
+    /** warm the voxel grid + splat for every scene a portal here leads to */
+    _prefetchDestinations(scene: any) {
+        if (!scene.portals) return;
+        for (const cfg of scene.portals) {
+            const dest = SCENES[cfg.to];
+            if (!dest) continue;
+            if (!dest.voxelData && dest.voxel !== 'embedded') {
+                this._loadVoxel(dest).catch(() => { /* retried on switch */ });
+            }
+            try {
+                const a = dest.gsplatAsset || this.app.assets.get(dest.gsplatId);
+                if (a && !a.resource && !a.loading) this.app.assets.load(a);
+            } catch (e) { /* headless */ }
+        }
+    }
+
     async switchTo(i: number, spawnAt: any = null) {
         if (this._busy) {
             // never drop a request — run it as soon as the current one lands
@@ -2625,7 +2659,9 @@ class SceneManager {
                 s._npcs.reset();
                 s._npcs.floorRange = scene.npcFloorY || null;
             }
-            if (s._director) s._director._showBanner(`TELEPORTING → ${scene.name.toUpperCase()}…`, 3);
+            // blink shut like passing a doorway — everything below happens
+            // behind black (destination data is usually prefetched already)
+            await this._fade(1, 130);
 
             // 1) collision data
             const v = await this._loadVoxel(scene);
@@ -2695,8 +2731,9 @@ class SceneManager {
                 }
             }
 
-            // 6) portals for this scene
+            // 6) portals for this scene, and prefetch wherever they lead
             this._buildPortals(scene);
+            this._prefetchDestinations(scene);
 
             this._setActive(i);
             this.current = i;
@@ -2705,6 +2742,9 @@ class SceneManager {
         } catch (e) {
             console.error('sceneManager switch failed', e);
         }
+        // hold black a beat so the splat sorter has frames ready, then open up
+        await new Promise(r => setTimeout(r, 140));
+        this._fade(0, 300);
         if (s._npcs) s._npcs.suspended = false;
         this._busy = false;
         if (s._net && s._net.enabled) s._net.sendStateNow();
