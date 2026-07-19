@@ -60,7 +60,7 @@ class BallPhysics {
         this.collision = collision;
     }
 
-    throwBall(origin: any, dir: { x: number; y: number; z: number }, speed: number = THROW_SPEED) {
+    throwBall(origin: any, dir: { x: number; y: number; z: number }, speed: number = THROW_SPEED, radius: number = BALL_RADIUS) {
         if (this.balls.length >= MAX_BALLS) {
             const oldest = this.balls.shift();
             if (oldest.entity) oldest.entity.destroy();
@@ -74,7 +74,7 @@ class BallPhysics {
             mat.diffuse.set(0.4 + 0.6 * Math.abs(Math.sin(h * 12.9)), 0.4 + 0.6 * Math.abs(Math.sin(h * 78.2 + 2)), 0.4 + 0.6 * Math.abs(Math.sin(h * 39.4 + 4)));
             mat.update();
             e.render.meshInstances[0].material = mat;
-            e.setLocalScale(BALL_RADIUS * 2, BALL_RADIUS * 2, BALL_RADIUS * 2);
+            e.setLocalScale(radius * 2, radius * 2, radius * 2);
             e.setPosition(origin.x + dir.x * 0.4, origin.y + dir.y * 0.4, origin.z + dir.z * 0.4);
             this.app.root.addChild(e);
         } catch (err) {
@@ -83,6 +83,7 @@ class BallPhysics {
 
         this.balls.push({
             entity: e,
+            r: radius,
             p: { x: origin.x + dir.x * 0.4, y: origin.y + dir.y * 0.4, z: origin.z + dir.z * 0.4 },
             v: { x: dir.x * speed, y: dir.y * speed, z: dir.z * speed }
         });
@@ -106,7 +107,7 @@ class BallPhysics {
             b.p.y += b.v.y * dt;
             b.p.z += b.v.z * dt;
 
-            if (col.querySphere(b.p.x, b.p.y, b.p.z, BALL_RADIUS, push)) {
+            if (col.querySphere(b.p.x, b.p.y, b.p.z, b.r, push)) {
                 b.p.x += push.x; b.p.y += push.y; b.p.z += push.z;
                 const len = Math.sqrt(push.x * push.x + push.y * push.y + push.z * push.z);
                 if (len > 1e-9) {
@@ -136,10 +137,10 @@ class BallPhysics {
         // static cylinder obstacles (props)
         for (const o of this.obstacles) {
             for (const b of balls) {
-                if (b.p.y < o.minY - BALL_RADIUS || b.p.y > o.maxY + BALL_RADIUS) continue;
+                if (b.p.y < o.minY - b.r || b.p.y > o.maxY + b.r) continue;
                 const dx = b.p.x - o.x, dz = b.p.z - o.z;
                 const d2 = dx * dx + dz * dz;
-                const minD = o.radius + BALL_RADIUS;
+                const minD = o.radius + b.r;
                 if (d2 > 1e-12 && d2 < minD * minD) {
                     const d = Math.sqrt(d2);
                     const nx = dx / d, nz = dz / d;
@@ -160,7 +161,7 @@ class BallPhysics {
                 const a = balls[i], c = balls[j];
                 const dx = c.p.x - a.p.x, dy = c.p.y - a.p.y, dz = c.p.z - a.p.z;
                 const d2 = dx * dx + dy * dy + dz * dz;
-                const minD = BALL_RADIUS * 2;
+                const minD = a.r + c.r;
                 if (d2 > 1e-12 && d2 < minD * minD) {
                     const d = Math.sqrt(d2);
                     const nx = dx / d, ny = dy / d, nz = dz / d;
@@ -204,6 +205,27 @@ const GUN_LOCAL_SCALE = 50;
 const FLASH_LOCAL_POS: [number, number, number] = [0.9191, 0.1532, -0.0064];
 const FLASH_LOCAL_SCALE = 100;
 
+/** trimmed personality set from the original npc-ai.js */
+const NPC_PERSONALITIES = [
+    { name: 'Sgt. Havoc', aggression: 0.9, randomness: 0.2 },
+    { name: 'Ghost', aggression: 0.3, randomness: 0.1 },
+    { name: 'Captain Valor', aggression: 0.7, randomness: 0.1 },
+    { name: 'Chaos', aggression: 0.5, randomness: 0.8 },
+    { name: 'Strategist', aggression: 0.5, randomness: 0.05 },
+    { name: 'Grumps', aggression: 0.6, randomness: 0.2 }
+];
+
+/** combat tuning (from npc-controller.js / npc-ai.js, rebalanced for gameplay) */
+const NPC_SIGHT_RANGE = 22;
+/** soldiers must be this close before they open fire (they advance otherwise) */
+const NPC_FIRE_RANGE = 11;
+const NPC_HEARING_RANGE = 3;
+const NPC_LKP_MEMORY_MS = 10000;
+const NPC_SHOT_DAMAGE = 8;
+const NPC_BASE_HIT_CHANCE = 0.35;
+const NPC_MAG = 30;
+const NPC_RELOAD_TIME = 3.0;
+
 const NPC_COUNT = 3;
 const NPC_HP = 3;
 const NPC_HEIGHT = 1.7;
@@ -223,6 +245,12 @@ class NpcSystem {
     failed = false;
     npcHeight = NPC_HEIGHT;
     npcRadius = NPC_RADIUS;
+    walkSpeedMul = 1;
+    combatEnabled = false;
+    playerDead = false;
+    onKill: any = null;
+    onPlayerDamage: any = null;
+    _desiredCount = 0;
     _push = { x: 0, y: 0, z: 0 };
     _screenPos: any;
 
@@ -318,13 +346,46 @@ class NpcSystem {
     _onAssetsReady() {
         try {
             this._measureHallway();
-            for (let i = 0; i < NPC_COUNT; i++) this._spawnNpc(i);
             this.ready = true;
-            console.log('npcSystem: spawned', this.npcs.length, 'soldiers');
+            if (this._desiredCount > 0) this._fillPopulation();
+            console.log('npcSystem: ready (population', this._desiredCount + ')');
         } catch (e) {
             console.error('npcSystem spawn failed', e);
             this.failed = true;
         }
+    }
+
+    _fillPopulation() {
+        while (this.aliveCount() < this._desiredCount) {
+            const before = this.npcs.length;
+            this._spawnNpc(this.npcs.length);
+            if (this.npcs.length === before) break; // no spawn spot found
+        }
+    }
+
+    aliveCount() {
+        let n = 0;
+        for (const npc of this.npcs) {
+            if (npc.state !== 'dying' && npc.state !== 'dead') n++;
+        }
+        return n;
+    }
+
+    /** set the live soldier population (waves) */
+    setPopulation(count: number, speedMul: number = 1) {
+        this._desiredCount = count;
+        this.walkSpeedMul = speedMul;
+        if (this.ready) this._fillPopulation();
+    }
+
+    /** remove every soldier immediately (restart) */
+    reset() {
+        for (const npc of this.npcs) {
+            try { npc.root.destroy(); } catch (e) { /* already gone */ }
+            if (npc.el) npc.el.remove();
+        }
+        this.npcs.length = 0;
+        this._desiredCount = 0;
     }
 
     _randomFloorSpot() {
@@ -378,16 +439,25 @@ class NpcSystem {
         el.style.cssText = 'position:fixed;transform:translate(-50%,-100%);z-index:9997;color:#fff;background:rgba(30,30,30,0.75);font:11px monospace;padding:1px 7px;border-radius:9px;pointer-events:none;white-space:nowrap;';
         document.body.appendChild(el);
 
+        const pers = NPC_PERSONALITIES[Math.floor(Math.random() * NPC_PERSONALITIES.length)];
         const npc = {
             root, model,
             p: { x: spot.x, y: spot.y, z: spot.z },
             target: null as any,
-            state: 'idle',           // idle | walk | dying | dead
+            state: 'idle',           // idle | walk | attack | dying | dead
             stateTime: 1 + Math.random() * 3,
             hp: NPC_HP,
             hitCooldown: 0,
             yaw: Math.random() * 360,
             fit: { phase: 'orient', wait: 3, idx: 0, results: [] as number[] },
+            pers,
+            canSee: false,
+            percT: Math.random() * 0.2,
+            lkp: null as any,
+            lkpTime: 0,
+            shootT: 1 + Math.random(),
+            bullets: NPC_MAG,
+            reloadT: 0,
             el
         };
         this._setAnim(npc, 'Idle');
@@ -408,10 +478,10 @@ class NpcSystem {
     _syncTag(npc: any) {
         if (!npc.el) return;
         if (npc.state === 'dying' || npc.state === 'dead') {
-            npc.el.textContent = 'soldier ☠';
+            npc.el.textContent = (npc.pers ? npc.pers.name : 'soldier') + ' ☠';
             npc.el.style.background = 'rgba(120,20,20,0.8)';
         } else {
-            npc.el.textContent = `soldier ${'♥'.repeat(npc.hp)}`;
+            npc.el.textContent = `${npc.pers ? npc.pers.name : 'soldier'} ${'♥'.repeat(npc.hp)}`;
             npc.el.style.background = 'rgba(30,30,30,0.75)';
         }
     }
@@ -443,8 +513,24 @@ class NpcSystem {
             const facing = { x: -Math.sin(npc.yaw * Math.PI / 180), z: -Math.cos(npc.yaw * Math.PI / 180) };
             const frontal = camFwd.x * facing.x + camFwd.z * facing.z < 0;
             this._setAnim(npc, frontal ? 'DeathB' : 'DeathF');
+            if (npc.flash) npc.flash.enabled = false;
+            if (this.onKill) this.onKill(npc);
         }
         this._syncTag(npc);
+    }
+
+    /** line of sight from npc chest to the player eye (voxel raycast + hearing) */
+    _hasLineOfSight(npc: any) {
+        const pp = this.cameraEntity.getPosition();
+        const fx = npc.p.x, fy = npc.p.y + this.npcHeight * 0.75, fz = npc.p.z;
+        const dx = pp.x - fx, dy = pp.y - fy, dz = pp.z - fz;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < NPC_HEARING_RANGE) return true;
+        if (dist > NPC_SIGHT_RANGE * 1.2) return false;
+        const hit = this.collision.queryRay(fx, fy, fz, dx / dist, dy / dist, dz / dist, dist);
+        if (!hit) return true;
+        const hx = hit.x - fx, hy = hit.y - fy, hz = hit.z - fz;
+        return Math.sqrt(hx * hx + hy * hy + hz * hz) > dist * 0.92;
     }
 
     /** nearest live npc intersected by the ray (vertical-capsule approximation) */
@@ -480,8 +566,8 @@ class NpcSystem {
             const dz = ball.p.z - npc.p.z;
             const dy = ball.p.y - (npc.p.y + this.npcHeight * 0.5);
             const xz = Math.sqrt(dx * dx + dz * dz);
-            const withinY = Math.abs(dy) < this.npcHeight * 0.5 + BALL_RADIUS;
-            if (xz < this.npcRadius + BALL_RADIUS && withinY) {
+            const withinY = Math.abs(dy) < this.npcHeight * 0.5 + ball.r;
+            if (xz < this.npcRadius + ball.r && withinY) {
                 // bounce the ball back off the soldier
                 const nx = xz > 1e-6 ? dx / xz : 1, nz = xz > 1e-6 ? dz / xz : 0;
                 const vn = ball.v.x * nx + ball.v.z * nz;
@@ -587,8 +673,19 @@ class NpcSystem {
                 flash.setLocalScale(FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE, FLASH_LOCAL_SCALE);
                 flash.enabled = false;
                 npc.flash = flash;
-                npc.flashTimer = 2 + Math.random() * 3;
                 npc.flashOn = 0;
+                try {
+                    const lightEnt = new pc.Entity('muzzle-light');
+                    flash.addChild(lightEnt);
+                    lightEnt.addComponent('light', {
+                        type: 'omni',
+                        color: new pc.Color(1, 0.85, 0.4),
+                        intensity: 0,
+                        range: 4,
+                        castShadows: false
+                    });
+                    npc.muzzleLight = lightEnt.light;
+                } catch (e) { /* headless */ }
             }
             console.log('npcSystem: m16 attached to', npc.root.name, 'scale', GUN_LOCAL_SCALE);
         } catch (e) {
@@ -606,19 +703,60 @@ class NpcSystem {
             if (npc.fit && npc.state !== 'dead') this._fitStep(npc);
             if (npc.hitCooldown > 0) npc.hitCooldown -= dt;
 
-            // occasional muzzle flash while alive
-            if (npc.flash && npc.state !== 'dying' && npc.state !== 'dead') {
-                if (npc.flashOn > 0) {
-                    npc.flashOn -= dt;
-                    if (npc.flashOn <= 0) npc.flash.enabled = false;
-                } else {
-                    npc.flashTimer -= dt;
-                    if (npc.flashTimer <= 0) {
-                        npc.flash.enabled = true;
-                        npc.flashOn = 0.09;
-                        npc.flashTimer = 1.5 + Math.random() * 3.5;
+            // muzzle flash decay
+            if (npc.flashOn > 0) {
+                npc.flashOn -= dt;
+                if (npc.flashOn <= 0) {
+                    if (npc.flash) npc.flash.enabled = false;
+                    if (npc.muzzleLight) npc.muzzleLight.intensity = 0;
+                }
+            }
+            if (npc.reloadT > 0) {
+                npc.reloadT -= dt;
+                if (npc.reloadT <= 0) npc.bullets = NPC_MAG;
+            }
+
+            // perception: LOS to the player eye a few times a second
+            // (raycast against the voxel world; hearing at point-blank —
+            //  ported from npc-controller.js/_checkLineOfSight)
+            if (this.combatEnabled && !this.playerDead &&
+                npc.state !== 'dying' && npc.state !== 'dead') {
+                npc.percT -= dt;
+                if (npc.percT <= 0) {
+                    npc.percT = 0.15;
+                    npc.canSee = this._hasLineOfSight(npc);
+                }
+                const pp = this.cameraEntity.getPosition();
+                const pdx = pp.x - npc.p.x, pdz = pp.z - npc.p.z;
+                const pdist = Math.sqrt(pdx * pdx + pdz * pdz);
+
+                if (npc.canSee && pdist < NPC_SIGHT_RANGE) {
+                    npc.lkp = { x: pp.x, y: pp.y, z: pp.z };
+                    npc.lkpTime = performance.now();
+                    if (npc.state !== 'attack') {
+                        npc.state = 'attack';
+                        npc.target = null;
+                        this._setAnim(npc, 'Idle');
+                    }
+                } else if (npc.state === 'attack') {
+                    // lost sight: chase the last-known position if fresh and
+                    // the personality is aggressive enough (npc-ai.js engageEnemy)
+                    const stale = performance.now() - npc.lkpTime > NPC_LKP_MEMORY_MS;
+                    if (!stale && npc.lkp && npc.pers.aggression > 0.4) {
+                        const floor = this.collision.queryRay(npc.lkp.x, npc.lkp.y, npc.lkp.z, 0, -1, 0, 5);
+                        npc.target = { x: npc.lkp.x, y: floor ? floor.y : npc.p.y, z: npc.lkp.z };
+                        npc.state = 'walk';
+                        this._setAnim(npc, 'Walk');
+                    } else {
+                        npc.state = 'idle';
+                        npc.stateTime = 1;
+                        this._setAnim(npc, 'Idle');
                     }
                 }
+            } else if (npc.state === 'attack') {
+                npc.state = 'idle';
+                npc.stateTime = 2;
+                this._setAnim(npc, 'Idle');
             }
 
             if (npc.state === 'dying') {
@@ -627,14 +765,60 @@ class NpcSystem {
                     npc.state = 'dead';
                     npc.root.destroy();
                     if (npc.el) npc.el.remove();
-                    // respawn a fresh soldier elsewhere
-                    this._spawnNpc(0);
                 }
                 continue;
             }
             if (npc.state === 'dead') continue;
 
-            if (npc.state === 'idle') {
+            if (npc.state === 'attack') {
+                const pp = this.cameraEntity.getPosition();
+                const dx = pp.x - npc.p.x, dz = pp.z - npc.p.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+
+                // face the player (same smoothing as walking)
+                const targetYaw = Math.atan2(-dx / (dist || 1), -dz / (dist || 1)) * 180 / Math.PI;
+                let dyaw = targetYaw - npc.yaw;
+                while (dyaw > 180) dyaw -= 360;
+                while (dyaw < -180) dyaw += 360;
+                npc.yaw += Math.max(-360 * dt, Math.min(360 * dt, dyaw));
+
+                // advance until inside firing range; aggressive personalities
+                // keep pushing to point-blank (npc-ai.js _pushing)
+                const holdDist = npc.pers.aggression > 0.6 ? 6 : NPC_FIRE_RANGE * 0.85;
+                if (dist > holdDist) {
+                    const nx = dx / dist, nz = dz / dist;
+                    npc.p.x += nx * NPC_WALK_SPEED * this.walkSpeedMul * dt;
+                    npc.p.z += nz * NPC_WALK_SPEED * this.walkSpeedMul * dt;
+                    const down = this.collision.queryRay(npc.p.x, npc.p.y + 1.2, npc.p.z, 0, -1, 0, 3);
+                    if (down) npc.p.y += (down.y - npc.p.y) * Math.min(1, dt * 10);
+                    const ccy = npc.p.y + this.npcHeight * 0.5;
+                    if (this.collision.queryCapsule(npc.p.x, ccy, npc.p.z, this.npcHeight * 0.5 - this.npcRadius, this.npcRadius, this._push)) {
+                        npc.p.x += this._push.x;
+                        npc.p.z += this._push.z;
+                    }
+                    this._setAnim(npc, 'Walk');
+                } else {
+                    this._setAnim(npc, 'Idle');
+                }
+
+                // burst fire when roughly on target (npc-controller.js firing rules)
+                npc.shootT -= dt;
+                if (npc.shootT <= 0 && Math.abs(dyaw) < 15 && npc.reloadT <= 0 && dist <= NPC_FIRE_RANGE) {
+                    npc.shootT = 0.45 + Math.random() * 0.4 * (1 + npc.pers.randomness);
+                    npc.bullets--;
+                    if (npc.bullets <= 0) npc.reloadT = NPC_RELOAD_TIME;
+                    if (npc.flash) {
+                        npc.flash.enabled = true;
+                        npc.flashOn = 0.05;
+                    }
+                    if (npc.muzzleLight) npc.muzzleLight.intensity = 3;
+                    // distance-based hit chance
+                    const chance = NPC_BASE_HIT_CHANCE * Math.max(0.25, 1 - dist / (NPC_SIGHT_RANGE * 1.4));
+                    if (Math.random() < chance && this.onPlayerDamage) {
+                        this.onPlayerDamage(NPC_SHOT_DAMAGE - 2 + Math.random() * 4, npc);
+                    }
+                }
+            } else if (npc.state === 'idle') {
                 npc.stateTime -= dt;
                 if (npc.stateTime <= 0) this._pickTarget(npc);
             } else if (npc.state === 'walk' && npc.target) {
@@ -648,8 +832,8 @@ class NpcSystem {
                     this._setAnim(npc, 'Idle');
                 } else {
                     const nx = dx / dist, nz = dz / dist;
-                    npc.p.x += nx * NPC_WALK_SPEED * dt;
-                    npc.p.z += nz * NPC_WALK_SPEED * dt;
+                    npc.p.x += nx * NPC_WALK_SPEED * this.walkSpeedMul * dt;
+                    npc.p.z += nz * NPC_WALK_SPEED * this.walkSpeedMul * dt;
 
                     // face movement direction (root yaw; model has its own 180 fix)
                     const targetYaw = Math.atan2(-nx, -nz) * 180 / Math.PI;
@@ -901,6 +1085,7 @@ const VM_CLIPS: any = {
 };
 const VM_FIRE_INTERVAL = 0.16;
 const VM_BALL_SPEED = 16;
+const VM_BALL_RADIUS = 0.055;
 const VM_MAG_SIZE = 30;
 const VM_RANGE = 60;
 
@@ -1069,7 +1254,7 @@ class ViewmodelSystem {
                 oy = p.y + r.y * 0.22 - u.y * 0.18 + f.y * 0.3;
                 oz = p.z + r.z * 0.22 - u.z * 0.18 + f.z * 0.3;
             }
-            this.balls.throwBall({ x: ox, y: oy, z: oz }, { x: f.x, y: f.y, z: f.z }, VM_BALL_SPEED);
+            this.balls.throwBall({ x: ox, y: oy, z: oz }, { x: f.x, y: f.y, z: f.z }, VM_BALL_SPEED, VM_BALL_RADIUS);
         }
 
         this._updateAmmo();
@@ -1365,6 +1550,171 @@ class LabelSystem {
     }
 }
 
+// ---- CAMPUS SIEGE: game director (waves, score, player HP, UofT skin) ----
+
+const THEME_BG = '#0d1117';
+const WAVE_INTERMISSION = 5;
+const PLAYER_MAX_HP = 100;
+const HP_REGEN_DELAY = 5;
+const HP_REGEN_RATE = 6;
+
+class GameDirector {
+    state = 'title'; // title | playing | intermission | gameover
+    wave = 0;
+    score = 0;
+    kills = 0;
+    hp = PLAYER_MAX_HP;
+    _regenT = 0;
+    _interT = 0;
+    npcs: any;
+    onRestart: any = null;
+    _overlay: any; _banner: any; _hud: any; _hpFill: any; _vignette: any; _feed: any;
+
+    constructor(npcs: any) {
+        this.npcs = npcs;
+        this._makeDom();
+        this._showTitle();
+
+        npcs.onKill = () => {
+            this.kills++;
+            this.score += 100;
+            this._feedMsg('soldier eliminated  +100');
+            this._syncHud();
+        };
+        npcs.onPlayerDamage = (dmg: number) => this._damage(dmg);
+    }
+
+    _makeDom() {
+        const mk = (css: string) => {
+            const d = document.createElement('div');
+            d.style.cssText = css;
+            document.body.appendChild(d);
+            return d;
+        };
+        this._overlay = mk(`position:fixed;inset:0;z-index:10005;display:flex;flex-direction:column;align-items:center;justify-content:center;background:${THEME_BG}f2;color:#fff;font-family:Georgia,serif;text-align:center;cursor:pointer;`);
+        this._banner = mk('position:fixed;top:18%;left:50%;transform:translateX(-50%);z-index:10004;display:none;background:rgba(13,17,23,0.92);border:2px solid #e63946;color:#fff;font:bold 20px Georgia,serif;padding:12px 34px;border-radius:4px;letter-spacing:2px;white-space:nowrap;');
+        this._hud = mk(`position:fixed;top:14px;left:14px;z-index:10001;color:#fff;font:bold 16px monospace;text-shadow:0 1px 3px rgba(0,0,0,0.9);pointer-events:none;background:rgba(13,17,23,0.6);padding:8px 14px;border-radius:6px;border-left:4px solid #e63946;`);
+        this._feed = mk('position:fixed;top:96px;left:14px;z-index:10001;color:#ffd;font:12px monospace;text-shadow:0 1px 2px #000;pointer-events:none;');
+        const hpWrap = mk('position:fixed;bottom:26px;left:26px;z-index:10001;width:220px;height:18px;background:rgba(0,0,0,0.55);border:2px solid #fff;border-radius:4px;pointer-events:none;');
+        this._hpFill = document.createElement('div');
+        this._hpFill.style.cssText = 'height:100%;width:100%;background:linear-gradient(90deg,#e63946,#ffb4a2);border-radius:2px;transition:width 0.15s;';
+        hpWrap.appendChild(this._hpFill);
+        this._vignette = mk('position:fixed;inset:0;z-index:10000;pointer-events:none;background:radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,0.55) 100%);opacity:0;transition:opacity 0.12s;');
+
+        this._overlay.addEventListener('click', () => {
+            if (this.state === 'title') this._start();
+            else if (this.state === 'gameover') this._restart();
+        });
+        this._syncHud();
+    }
+
+    _showTitle() {
+        this.state = 'title';
+        this._overlay.style.display = 'flex';
+        this._overlay.innerHTML =
+            '<div style="font-size:60px;font-weight:bold;letter-spacing:10px;margin:10px 0;color:#e63946">SIEGE</div>' +
+            '<div style="font-size:13px;letter-spacing:4px;opacity:0.7;margin-bottom:30px">HOLD THE HALLWAY</div>' +
+            '<div style="font:13px monospace;line-height:1.9;opacity:0.9">WASD move · mouse look · LMB fire ball cannon · R reload<br>Space jump · Shift run · F respawn · Y fly · X label · V remove</div>' +
+            '<div style="margin-top:32px;font:bold 16px monospace;animation:pulse 1.2s infinite">CLICK TO START</div>' +
+            '<style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}</style>';
+    }
+
+    _start() {
+        this.state = 'playing';
+        this.wave = 0;
+        this.score = 0;
+        this.kills = 0;
+        this.hp = PLAYER_MAX_HP;
+        this._overlay.style.display = 'none';
+        this.npcs.playerDead = false;
+        this.npcs.combatEnabled = true;
+        this._nextWave();
+        const canvas = (window as any).walk?.script?.app?.graphicsDevice?.canvas;
+        if (canvas) canvas.requestPointerLock();
+    }
+
+    _restart() {
+        if (this.onRestart) this.onRestart();
+        this._start();
+    }
+
+    _nextWave() {
+        this.wave++;
+        const count = Math.min(2 + this.wave, 8);
+        const speedMul = Math.min(1 + (this.wave - 1) * 0.12, 1.8);
+        this.npcs.reset();
+        this.npcs.setPopulation(count, speedMul);
+        this._showBanner(`— WAVE ${this.wave} INCOMING —`, 3);
+        this._syncHud();
+    }
+
+    _showBanner(text: string, secs: number) {
+        this._banner.textContent = text;
+        this._banner.style.display = 'block';
+        clearTimeout((this as any)._bannerTo);
+        (this as any)._bannerTo = setTimeout(() => {
+            this._banner.style.display = 'none';
+        }, secs * 1000);
+    }
+
+    _feedMsg(text: string) {
+        const line = document.createElement('div');
+        line.textContent = text;
+        this._feed.prepend(line);
+        setTimeout(() => line.remove(), 4000);
+        while (this._feed.children.length > 4) this._feed.lastChild.remove();
+    }
+
+    _damage(dmg: number) {
+        if (this.state !== 'playing') return;
+        this.hp = Math.max(0, this.hp - dmg);
+        this._regenT = HP_REGEN_DELAY;
+        this._vignette.style.opacity = '1';
+        setTimeout(() => { this._vignette.style.opacity = '0'; }, 160);
+        this._syncHud();
+        if (this.hp <= 0) this._gameOver();
+    }
+
+    _gameOver() {
+        this.state = 'gameover';
+        this.npcs.playerDead = true;
+        document.exitPointerLock();
+        this._overlay.style.display = 'flex';
+        this._overlay.innerHTML =
+            '<div style="font-size:48px;font-weight:bold;letter-spacing:4px;color:#e63946">YOU DIED</div>' +
+            `<div style="font:16px monospace;margin-top:22px;line-height:2">final score <b>${this.score}</b><br>waves survived <b>${this.wave}</b> · soldiers eliminated <b>${this.kills}</b></div>` +
+            '<div style="margin-top:30px;font:bold 15px monospace;animation:pulse 1.2s infinite">CLICK TO RESTART</div>';
+    }
+
+    _syncHud() {
+        this._hud.innerHTML =
+            `SIEGE<br><span style="font-weight:normal">wave ${this.wave} · score ${this.score} · kills ${this.kills}</span>`;
+        this._hpFill.style.width = `${(this.hp / PLAYER_MAX_HP) * 100}%`;
+    }
+
+    update(dt: number) {
+        if (this.state === 'playing') {
+            if (this._regenT > 0) {
+                this._regenT -= dt;
+            } else if (this.hp < PLAYER_MAX_HP) {
+                this.hp = Math.min(PLAYER_MAX_HP, this.hp + HP_REGEN_RATE * dt);
+                this._syncHud();
+            }
+            if (this.npcs.ready && this.npcs.npcs.length > 0 && this.npcs.aliveCount() === 0) {
+                this.state = 'intermission';
+                this._interT = WAVE_INTERMISSION;
+                this._showBanner(`WAVE ${this.wave} CLEARED`, WAVE_INTERMISSION);
+            }
+        } else if (this.state === 'intermission') {
+            this._interT -= dt;
+            if (this._interT <= 0) {
+                this.state = 'playing';
+                this._nextWave();
+            }
+        }
+    }
+}
+
 function makeHud() {
     let el = document.getElementById('uni3-hud') as HTMLDivElement | null;
     if (!el) {
@@ -1380,6 +1730,8 @@ const WalkScript = pc.createScript('walkCollision');
 
 WalkScript.prototype.initialize = function (this: any) {
     this._hud = makeHud();
+    this._hud.style.display = 'none';
+    this._hudHidden = true;
 
     const data = (window as any).UNI3_VOXEL;
     if (!data) {
@@ -1440,16 +1792,16 @@ WalkScript.prototype.initialize = function (this: any) {
             case 'ShiftLeft': case 'ShiftRight': keys.run = down; break;
             case 'KeyQ': keys.down = down; break;
             case 'KeyF':
-                if (down && self._viewmodel) self._viewmodel.reload();
-                break;
-            case 'KeyE': keys.up = down; break;
-            case 'KeyR':
                 if (down) {
                     if (!self._flyMode) {
                         self._controller.resetToSpawn(self._walkCamera) ||
                             self._controller.onEnter(self._walkCamera);
                     }
                 }
+                break;
+            case 'KeyE': keys.up = down; break;
+            case 'KeyR':
+                if (down && self._viewmodel) self._viewmodel.reload();
                 break;
             case 'KeyG':
                 if (down) {
@@ -1496,6 +1848,12 @@ WalkScript.prototype.initialize = function (this: any) {
                 if (down) {
                     const m = self._labels.nearestMarkerToAim();
                     if (m) self._labels.deleteMarker(m);
+                }
+                break;
+            case 'Backquote':
+                if (down && self._hud) {
+                    self._hudHidden = !self._hudHidden;
+                    self._hud.style.display = self._hudHidden ? 'none' : 'block';
                 }
                 break;
             case 'KeyY':
@@ -1617,8 +1975,27 @@ WalkScript.prototype.initialize = function (this: any) {
         console.error('viewmodel init failed', e);
         this._viewmodel = null;
     }
+    try {
+        this._director = this._npcs ? new GameDirector(this._npcs) : null;
+        if (this._director) {
+            this._director.onRestart = () => {
+                if (this._balls) this._balls.clear();
+                if (this._viewmodel) {
+                    this._viewmodel.ammo = 30;
+                    this._viewmodel.reloading = false;
+                    this._viewmodel._updateAmmo();
+                    if (this._viewmodel.ready) this._viewmodel.play('idle');
+                }
+                this._flyMode = false;
+                this._controller.resetToSpawn(this._walkCamera) || this._controller.onEnter(this._walkCamera);
+            };
+        }
+    } catch (e) {
+        console.error('game director init failed', e);
+        this._director = null;
+    }
 
-    (window as any).walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel };
+    (window as any).walk = { controller, camera: walkCamera, collision, script: this, balls: this._balls, labels: this._labels, npcs: this._npcs, props: this._props, viewmodel: this._viewmodel, director: this._director };
     this._hudT = 0;
 };
 
@@ -1634,6 +2011,7 @@ WalkScript.prototype.update = function (this: any, dt: number) {
     if (this._balls) this._balls.step(Math.min(dt, 0.05));
     if (this._npcs) this._npcs.step(Math.min(dt, 0.05), this._balls ? this._balls.balls : []);
     if (this._viewmodel) this._viewmodel.step(dt);
+    if (this._director) this._director.update(dt);
     if (this._labels) this._labels.update();
 
     const keys = this._keys;
@@ -1688,7 +2066,7 @@ WalkScript.prototype.update = function (this: any, dt: number) {
     if (this._hudT > 0.25 && this._hud) {
         this._hudT = 0;
         this._hud.textContent = `pos ${wp.x.toFixed(2)} ${wp.y.toFixed(2)} ${wp.z.toFixed(2)}` +
-            '\nLMB shoot | F reload | WASD Space Shift | Y fly | R respawn | G ball | C clear' +
+            '\nLMB shoot | R reload | WASD Space Shift | Y fly | F respawn | G ball | C clear' +
             '\nX label object | V remove/restore | [ ] size | L labels | Backspace delete';
     }
 };
