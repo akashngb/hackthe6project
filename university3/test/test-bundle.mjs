@@ -98,9 +98,16 @@ const collision = script._labels.collision;
 
 // ball: drop from mid-hallway air
 balls.throwBall({ x: -0.1, y: 1.0, z: -10.9 }, { x: 0, y: 0.3, z: -1 });
-for (let i = 0; i < 600; i++) { balls.step(1/60); }
-const b = balls.balls[0];
-console.log('ball after 10s:', b.p.x.toFixed(2), b.p.y.toFixed(2), b.p.z.toFixed(2), 'v', b.v.x.toFixed(2), b.v.y.toFixed(2), b.v.z.toFixed(2));
+let lastBallPos = null;
+for (let i = 0; i < 600; i++) {
+    balls.step(1/60);
+    const bb = balls.balls[0];
+    if (!bb) break; // culled after max bounces — fine
+    lastBallPos = { x: bb.p.x, y: bb.p.y, z: bb.p.z };
+}
+console.log('ball (culled after bounces or resting):',
+    lastBallPos ? `${lastBallPos.x.toFixed(2)} ${lastBallPos.y.toFixed(2)} ${lastBallPos.z.toFixed(2)}` : 'none',
+    '| culled:', balls.balls.length === 0);
 
 // carve: pick a solid voxel near the floor under spawn, mark removed sphere over it
 const res = collision.voxelResolution;
